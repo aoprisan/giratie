@@ -13,9 +13,13 @@ image-pixel polylines for every carriageway, and the map frame is the image fram
 Str. Andrei Șaguna: the Vissim model brings traffic in on the curved carriageway (two mid-block crossings) and out on the straight one,
 so the arm has `flow` 250 and `out` 900 (the old Morilor arms' combined weight). OSM reads Șaguna as one-way westbound with eastbound
 traffic via Bd. Victoriei; the model follows the city's image.
-Calibration point: ~3,000 vehicles 7–9 am at Milea × Dumbrăvii; the model gives ~1,730 veh/h through the network at 100% demand (give-way).
-Mean of 6 seeds, 20 min, pair plan, 70 s cycle (trip s / veh/h): all give-way 55 / 1,728; Milea only fixed 119 / 1,610, adaptive 81 / 1,720;
-both fixed 248 / 1,508, adaptive 98 / 1,694. Trip times include the drive along the true-length approaches.
+Calibration point: ~3,000 vehicles 7–9 am at Milea × Dumbrăvii; the model gives ~1,770 veh/h through the network at 100% demand (give-way).
+Mean of 6 seeds, 20 min, pair plan, 70 s cycle (trip s / veh/h): all give-way 55 / 1,770; Milea only fixed 147 / 1,588, adaptive 71 / 1,744;
+both fixed 234 / 1,474, adaptive 114 / 1,760. Trip times include the drive along the true-length approaches.
+Lane-choice errors (`P.err`; 12 seeds, 30 min, mean of 5-min readings after 10 min; trip s / veh/h, 0% → 30% wrong lane):
+give-way 57 / 1,835 → 57 / 1,841; Milea only fixed 152 / 1,676 → 165 / 1,643, adaptive 72 / 1,821 → 69 / 1,857; both fixed
+284 / 1,419 → 294 / 1,394, adaptive 121 / 1,796 → 140 / 1,744. At 125% demand: both adaptive 226 → 234 s, both fixed 428 → 452 s.
+So in this model wrong lanes cost at most ~15% of trip time under signals and nothing under give-way; the control type matters far more.
 
 ## Layout
 TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-singlefile`).
@@ -24,9 +28,9 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 - `src/ui.ts`   – canvas rendering, controls, readouts. Reads colours from CSS tokens.
 - `src/main.ts` – entry point; `src/style.css` – CSS (light/dark tokens on `:root`); `index.html` – markup.
 - `npm run build` – typechecks, then emits `dist/index.html`.
-- `test/sim.test.ts` / `npm test` – vitest: network shape, every signal in the Vissim image, bypasses and mid-block crossings in use, both ring and approach lanes in use without overlaps,
+- `test/sim.test.ts` / `npm test` – vitest: network shape, every signal in the Vissim image, bypasses and mid-block crossings in use, both ring and approach lanes in use without overlaps, lane-choice errors,
   determinism, throughput sanity, no ring overlap.
-- `scripts/scenarios.ts` / `npm run scenarios [-- seed]` – 20 simulated minutes per scenario, prints trip time, throughput, queues.
+- `scripts/scenarios.ts` / `npm run scenarios [-- seed [err]]` – 20 simulated minutes per scenario, prints trip time, throughput, queues.
 - `.github/workflows/pages.yml` – test + build on every push/PR, deploy `dist/` to GitHub Pages from `main`.
 
 ## Model
@@ -40,6 +44,14 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
   within a lane. Lane choice (`want()`): right lane for a turn under 100° round the ring or the bypass, left lane over 260°, else
   either (spawn picks the emptier lane, no change). Lane changes (`change()`) on approaches and links need gaps of 1.5 m ahead and
   1.5 m + 0.6 s behind, 0.5 m + 0.3 s over the last 40 m; a driver still in the wrong lane at the stop line stays in it.
+- Lane-choice errors (`P.err`, 0–1, UI slider "Drivers in the wrong lane"): a driver who needs one lane (not straight on) takes the
+  other at spawn, or skips the early change on a link (`Vehicle.err` 1). It notices `ERRD` = 30 m before the stop line, squeezes
+  across if it can, else stops 3 m before the stop line holding up its lane, and gives up after `ERRW` = 10 s (`err` 2).
+  The error draws always consume `rng`, so runs with and without errors see the same demand.
+- Wrong ring lane (`Vehicle.rw`, any driver who entered from the wrong lane): cuts across to the other ring lane at the first gap
+  (1 m ahead, 1 m + 0.5 s behind). One stuck in the outer lane that needs the inner stops 1 m before the first exit after its entry
+  (`hs`), holding up the outer lane, for up to `ERRW` s; one stuck in the inner lane leaves from it, giving way as usual.
+  The UI draws drivers still sorting out their lane in `--wrong`.
 - Ring lane conflicts: the outer lane yields to the outer lane, the inner lane (crossing the outer) to both (`canEnter(a, len, ex, k)`).
   Leaving from the inner lane gives way to outer-lane vehicles passing the exit (or taking the same one-lane exit); inner goes to
   the exit's left lane (`exitLane`). Exit spillback blocks only the ring lane the stuck vehicle came from.
@@ -80,7 +92,8 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 - No turbo lane dividers or lane-specific arrows from the real markings; lane choice is by turning angle.
 - Per-arm flows (`flow`, veh/h) and signal timings are invented, scaled to the one published count. No real counts, no published phase plan.
 - Vehicles queued past the map edge sit in `arm.backlog`. The side street at Șaguna's first crossing is drawn (`STUBS` in ui.ts) without traffic.
-- No deliberate lane-choice errors (the city blamed >80% of the 6 Oct queues on them; only drivers who fail to change in time), no coordination
+- Lane-choice errors are polite: erring drivers stop and wait, never force their way or cause conflicts; no unfamiliarity with new
+  markings beyond the `P.err` share. No coordination
   offsets between roundabouts, no intermediate signals on the links (e.g. at Banatului on the eastbound route).
 - Bus tails are drawn along the ring while entering (visual only).
 

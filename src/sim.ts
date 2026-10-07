@@ -15,6 +15,8 @@ export interface Params {
   ped: number;
   plan: Plan;
   ctrl: Ctrl;
+  /** Share of drivers (0–1) who pick the wrong lane on a two-lane approach and only notice near the stop line. */
+  err?: number;
 }
 
 export interface Signal {
@@ -32,6 +34,7 @@ export interface Pending {
   t: number;
   dest: Arm;
   bus: boolean;
+  err: boolean;
 }
 
 export interface Vehicle {
@@ -48,6 +51,14 @@ export interface Vehicle {
   step: number;
   /** Ring lane: 0 outer, 1 inner. Kept after leaving the ring. */
   ri: number;
+  /** Lane-choice error on the current approach: 0 none, 1 in the wrong lane and not yet aware, 2 gave up changing. */
+  err: number;
+  /** Erring driver: when it stopped to wait for a gap, or -1. */
+  wait: number;
+  /** In the ring: the ring lane it should be in after entering from the wrong one (-1 = fine), and where a driver
+   *  stuck in the outer lane stops to get into the inner one (just before the first exit after its entry). */
+  rw: number;
+  hs: number;
 }
 
 export interface Stop {
@@ -564,6 +575,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     }
     return true;
   }
+  const ERRD = 30, ERRW = 10;
   // Intelligent Driver Model.
   const AM = 1.8, BM = 2.5, TH = 1.1, SQ = 2 * Math.sqrt(AM * BM);
   function term(v: number, gap: number, dv: number, s0: number): number {
@@ -595,14 +607,15 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     }
     for (const a of arms) {
       if (a.link < 0 && a.flow) {
-        if (rng() < a.flow * P.demand / 3600 * DT) { const dest = pickDest(a); a.backlog.push({t, dest, bus: rng() < 0.035}); }
+        if (rng() < a.flow * P.demand / 3600 * DT) { const dest = pickDest(a); a.backlog.push({t, dest, bus: rng() < 0.035, err: rng() < (P.err ?? 0)}); }
         if (a.backlog.length) {
-          // Straight on: the lane with fewer vehicles.
-          const b = a.backlog[0], w = want(b.dest, a.inLane);
-          const l = a.inL[w >= 0 ? w : a.inL[1].veh.length < a.inL[0].veh.length ? 1 : 0], tl = l.veh[l.veh.length - 1];
+          // Straight on: the lane with fewer vehicles. A share `P.err` of drivers who need one lane take the other.
+          const b = a.backlog[0], w = want(b.dest, a.inLane), wrong = b.err && w >= 0 && !!a.inLane.sib;
+          const l = a.inL[w >= 0 ? (wrong ? 1 - w : w) : a.inL[1].veh.length < a.inL[0].veh.length ? 1 : 0], tl = l.veh[l.veh.length - 1];
           if (!tl || tl.pos - tl.len > 7) {
             a.backlog.shift();
-            l.veh.push({pos: 0, v: tl ? Math.min(11, tl.v + 2) : 11, len: b.bus ? 17 : 4.5, bus: b.bus, t0: b.t, dest: b.dest, lane: l, rb: null, s: 0, exit: null, step: n, ri: 0});
+            l.veh.push({pos: 0, v: tl ? Math.min(11, tl.v + 2) : 11, len: b.bus ? 17 : 4.5, bus: b.bus, t0: b.t, dest: b.dest, lane: l, rb: null, s: 0, exit: null, step: n,
+              ri: 0, err: wrong ? 1 : 0, wait: -1, rw: -1, hs: 0});
           }
         }
       }
@@ -612,6 +625,23 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
         if (v.step === n) continue; v.step = n;
         const ex = v.exit!, dEx = mod(ex.sExit - v.s, C);
         let inter = 0, hard = Infinity;
+        // Entered in the wrong lane: cut across to the other ring lane at the first gap. A driver in the outer lane who
+        // needs the inner one stops before the next exit to wait for it, holding up the outer lane, for up to ERRW s.
+        if (v.rw >= 0) {
+          let ok = true;
+          for (const o of rb.veh) {
+            if (o.ri !== v.rw) continue;
+            if (mod(o.s - v.s, C) - o.len < 1 || mod(v.s - o.s, C) - v.len < 1 + o.v * 0.5) { ok = false; break; }
+          }
+          if (ok) { v.ri = v.rw; v.rw = -1; v.wait = -1; }
+          else if (v.ri === 0) {
+            const dh = mod(v.hs - 1 - v.s, C);
+            if (dh < dEx) {
+              if (v.v < 0.5 && dh < 2) { if (v.wait < 0) v.wait = t; else if (t - v.wait > ERRW) v.rw = -1; }
+              if (v.rw >= 0) { inter = Math.max(inter, term(v.v, dh, v.v, 0.3)); hard = Math.min(hard, dh + 0.3); }
+            } else v.rw = -1;
+          }
+        }
         for (const o of rb.veh) {
           if (o === v || o.ri !== v.ri) continue;
           const gap = mod(o.s - v.s, C) - o.len;
@@ -648,7 +678,11 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
           }
         }
         const ds = advance(v, 7.5, inter, hard);
-        if (ds >= dEx) { rb.veh.splice(rb.veh.indexOf(v), 1); v.rb = null; v.lane = ol; v.pos = ds - dEx; ol.veh.push(v); }
+        if (ds >= dEx) {
+          rb.veh.splice(rb.veh.indexOf(v), 1); v.rb = null; v.lane = ol; v.pos = ds - dEx; ol.veh.push(v);
+          // Onto a link: a share `P.err` of drivers do not change lanes early for the next ring.
+          if (rng() < (P.err ?? 0) && ol.endArm && ol.sib) v.err = 1;
+        }
         else v.s = mod(v.s + ds, C);
       }
     }
@@ -659,8 +693,18 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
         if (v.step === n) continue; v.step = n;
         // Lane change towards the lane needed at the ring ahead, squeezing in over the last 40 m. A driver who has not
         // made it by the stop line stays in the wrong lane (from the inner ring lane it can still leave anywhere).
+        // A driver with a lane-choice error (`err` 1) only notices ERRD m before the stop line, then stops there for a gap,
+        // holding up its lane, and gives up after ERRW s.
         const wl = l.endArm && l.sib ? want(v.dest, l) : -1;
-        if (wl >= 0 && wl !== l.k && v.pos < l.L - ZD && change(v, l, v.pos > l.L - ZD - 40)) continue;
+        let hold = -1;
+        if (wl >= 0 && wl !== l.k && v.pos < l.L - ZD) {
+          if (v.err !== 1) { if (v.err === 0 && change(v, l, v.pos > l.L - ZD - 40)) continue; }
+          else if (l.L - ZD - v.pos < ERRD) {
+            if (change(v, l, true)) { v.err = 0; v.wait = -1; continue; }
+            if (v.v < 0.5 && l.L - ZD - v.pos < 6) { if (v.wait < 0) v.wait = t; else if (t - v.wait > ERRW) v.err = 2; }
+            if (v.err === 1) hold = l.L - ZD - 3;
+          }
+        }
         // Bound for this lane's bypass and not yet at its start: only what lies before the split matters.
         const slip = l.slip && v.pos < l.slip.at && exitFor(l.endArm!.rb, v.dest) === l.slip.to ? l.slip : null;
         let inter = 0, hard = Infinity;
@@ -670,6 +714,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
           if (!(slip && ld.pos - ld.len > slip.at)) { const gap = ld.pos - ld.len - v.pos; inter = term(v.v, gap, v.v - ld.v, 2); hard = gap; }
         }
         for (const st of l.stops) if (st.pos > v.pos - 0.2 && !(slip && st.pos > slip.at) && stopBlocked(st)) inter = Math.max(inter, term(v.v, st.pos - v.pos, v.v, 0.6));
+        if (hold > v.pos - 0.2) { inter = Math.max(inter, term(v.v, hold - v.pos, v.v, 0.5)); hard = Math.min(hard, hold - v.pos + 0.3); }
         const d = l.L - v.pos;
         let enter = false, v0 = l.merge ? 8 : 12.5;
         if (l.endArm) {
@@ -691,7 +736,10 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
             if (enter && l.veh[0] === v) {
               l.veh.shift();
               const a = l.endArm, rb = a.rb;
-              v.lane = null; v.rb = rb; v.ri = l.k; v.s = mod(a.sEntry + v.pos - l.L, C); v.exit = exitFor(rb, v.dest); rb.veh.push(v);
+              v.lane = null; v.rb = rb; v.ri = l.k; v.err = 0; v.wait = -1;
+              v.rw = wl >= 0 && wl !== l.k ? wl : -1;
+              v.hs = rb.arms.reduce((m, e) => Math.min(m, mod(e.sExit - a.sEntry, C)), C) + a.sEntry;
+              v.s = mod(a.sEntry + v.pos - l.L, C); v.exit = exitFor(rb, v.dest); rb.veh.push(v);
             } else v.pos = l.L - 0.05;
           } else if (l.merge) {
             if (enter && l.veh[0] === v) {

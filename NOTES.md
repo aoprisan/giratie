@@ -14,7 +14,12 @@ Then: two-lane rings and approaches, as the image draws them (details in CLAUDE.
 all give-way 55 / 1,728; Milea only fixed 119 / 1,610, adaptive 81 / 1,720; both fixed 248 / 1,508, adaptive 98 / 1,694.
 Signals now come close to give-way on throughput, and adaptive Milea-only is barely slower; fixed-time is still clearly worse.
 
-Next: deliberate lane-choice errors (a share of drivers in the wrong lane) to test the city's explanation of the 6 Oct queues.
+Then: lane-choice errors (`P.err`, "Drivers in the wrong lane" slider) to test the city's explanation of the 6 Oct queues
+(details and numbers in CLAUDE.md). Result: 30% of drivers in the wrong lane add at most ~15% to trip times under signals and
+nothing under give-way; fixed-time vs adaptive matters far more. The errant drivers are polite (they stop and wait), so this is a
+lower bound on the harm.
+
+Next: aggressive errors (forcing across, conflicts that stop both ring lanes); real lane markings and arrows from the city.
 
 # Handoff notes – 7 Oct 2026
 

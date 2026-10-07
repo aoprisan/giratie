@@ -71,6 +71,26 @@ describe('createSim', () => {
     for (const a of s.arms) if (a.inL.length === 2 && (a.flow || a.link >= 0)) expect(a.inL.every(l => used.has(l))).toBe(true);
   });
 
+  it('puts a share of drivers in the wrong lane, who sort it out late or in the ring without gridlock', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0.3}, mulberry32(6));
+    s.rbs.forEach(r => r.mode = 'signal');
+    let erring = 0, cutting = 0;
+    for (let i = 0; i < 9000; i++) {
+      s.step();
+      for (const l of s.lanes) for (const v of l.veh) if (v.err === 1 && v.lane!.endArm && v.lane!.sib) erring++;
+      for (const rb of s.rbs) for (const v of rb.veh) if (v.rw >= 0) cutting++;
+    }
+    expect(erring).toBeGreaterThan(0);
+    expect(cutting).toBeGreaterThan(0);
+    expect(s.stats().flow).toBeGreaterThan(1000);
+    // Same seed and no errors: identical traffic demand, so the error draws do not shift other random numbers.
+    const a = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0}, mulberry32(6));
+    const b = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0.3}, mulberry32(6));
+    for (let i = 0; i < 300; i++) { a.step(); b.step(); }
+    expect(b.arms.map(x => x.inL.reduce((m, l) => m + l.veh.length, 0) + x.backlog.length))
+      .toEqual(a.arms.map(x => x.inL.reduce((m, l) => m + l.veh.length, 0) + x.backlog.length));
+  });
+
   it('is deterministic for a given seed', () => {
     expect(run(['classic', 'signal'], 7).stats()).toEqual(run(['classic', 'signal'], 7).stats());
   });

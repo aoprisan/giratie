@@ -1,7 +1,7 @@
 // Canvas rendering, controls and readouts. Colours come from CSS tokens on :root.
 import {along, createSim, offset, type Ctrl, type Lane, type Light, type Mode, type Params, type Plan, type Pt, type Sim, type Vehicle} from './sim';
 
-const COLOR_KEYS = ['ground', 'road', 'mark', 'island', 'car', 'stop', 'slow', 'go', 'ped', 'bus', 'ink', 'muted', 'line', 'accent', 'surface', 'lampoff', 'label', 'labelink', 'title'] as const;
+const COLOR_KEYS = ['ground', 'road', 'mark', 'island', 'car', 'stop', 'slow', 'go', 'ped', 'bus', 'wrong', 'ink', 'muted', 'line', 'accent', 'surface', 'lampoff', 'label', 'labelink', 'title'] as const;
 type ColorKey = typeof COLOR_KEYS[number];
 
 function $<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -11,7 +11,7 @@ function $<T extends HTMLElement = HTMLElement>(id: string): T {
 }
 
 export function start(): void {
-  const P: Params = {demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'};
+  const P: Params = {demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0};
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let sim: Sim, speed = 2, paused = reduce, modes: Mode[] = ['classic', 'signal'];
   let hist: {t: number; v: number}[] = [], marks: number[] = [], lastHist = 0;
@@ -118,7 +118,8 @@ export function start(): void {
       if (x.pedWait > 0) dot(x.ax - ux * 1.6, x.ay - uy * 1.6, 0.8, col.ped);
     }
     // Vehicles: a body 1.9 m wide (buses 2.5 m) along the lane, or along the ring.
-    const vc = (v: Vehicle) => v.bus ? col.bus : v.v < 0.5 ? col.stop : v.v < 4 ? col.slow : col.car;
+    // Drivers in the wrong lane (still sorting it out) stand out in their own colour.
+    const vc = (v: Vehicle) => v.err === 1 || v.rw >= 0 ? col.wrong : v.bus ? col.bus : v.v < 0.5 ? col.stop : v.v < 4 ? col.slow : col.car;
     const vw = (v: Vehicle) => Math.max(v.bus ? 2.5 : 1.9, 2.2 / sc);
     for (const l of sim.lanes) for (const v of l.veh) {
       ctx.strokeStyle = vc(v); ctx.lineWidth = vw(v);
@@ -215,6 +216,7 @@ export function start(): void {
   bind('demand', v => P.demand = v / 100, v => v + '%');
   bind('cycle', v => P.cycle = v, v => v + ' s');
   bind('ped', v => P.ped = v, v => v + ' / h');
+  bind('err', v => P.err = v / 100, v => v + '%');
   const planEl = $<HTMLSelectElement>('plan');
   planEl.onchange = () => { P.plan = planEl.value as Plan; marks.push(sim.t); };
   P.plan = planEl.value as Plan;
