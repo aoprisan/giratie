@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {createSim, mulberry32, type Ctrl, type Mode, type Vehicle} from '../src/sim';
+import {createSim, grade, mulberry32, score, type Ctrl, type Mode, type Vehicle} from '../src/sim';
 
 function run(modes: Mode[], seed = 1, steps = 6000, ctrl: Ctrl = 'adaptive') {
   const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl}, mulberry32(seed));
@@ -214,5 +214,21 @@ describe('createSim', () => {
       expect(st.backlog).toBeGreaterThan(0);
       expect(st.flow).toBeGreaterThan(1500);
     }
+  });
+
+  it('scores traffic from mean wait and the share of demand served', () => {
+    expect(score(0, 1000, 1000)).toBe(100);
+    expect(score(30, 1000, 1000)).toBe(50);
+    expect(score(0, 500, 1000)).toBe(50);
+    expect(score(0, 1200, 1000)).toBe(100);
+    expect([5, 12, 20, 30, 45, 90].map(grade).join('')).toBe('ABCDEF');
+    const early = run(['classic', 'classic'], 1, 600).stats();
+    expect(early.score).toBeNull();
+    const gw = run(['classic', 'classic'], 1, 9000).stats(), sig = run(['signal', 'signal'], 1, 9000, 'fixed').stats();
+    // Waits are part of the trip, and give-way beats fixed-time signals on both rings at 100%.
+    for (const st of [gw, sig]) { expect(st.wait).toBeGreaterThanOrEqual(0); expect(st.wait).toBeLessThan(st.trip); expect(st.offered).toBeGreaterThan(1000); }
+    expect(gw.wait).toBeLessThan(sig.wait);
+    expect(gw.score!).toBeGreaterThan(sig.score!);
+    expect(gw.score!).toBeGreaterThan(70);
   });
 });

@@ -51,9 +51,9 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 - `src/main.ts` – entry point; `src/style.css` – CSS (light/dark tokens on `:root`); `index.html` – markup.
 - `npm run build` – typechecks, then emits `dist/index.html`.
 - `test/sim.test.ts` / `npm test` – vitest: network shape, every signal in the Vissim image, bypasses and mid-block crossings in use, both ring and approach lanes in use without overlaps, lane-choice errors (polite and forcing), no lane markings without gridlock,
-  determinism, throughput sanity, no ring overlap, vehicle mix, 300% demand without gridlock.
+  determinism, throughput sanity, no ring overlap, vehicle mix, 300% demand without gridlock, score and wait.
 - `scripts/scenarios.ts` / `npm run scenarios [-- seed [err [demand [mix]]]]` – 20 simulated minutes per scenario, prints trip time,
-  throughput, queues (`mix` 0 = identical cars).
+  wait, throughput, offered demand, score and grade, queues (`mix` 0 = identical cars).
 - `.github/workflows/pages.yml` – test + build on every push/PR, deploy `dist/` to GitHub Pages from `main`.
 
 ## Model
@@ -90,6 +90,11 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 - Ring lane conflicts: the outer lane yields to the outer lane, the inner lane (crossing the outer) to both (`canEnter(a, len, ex, k)`).
   Leaving from the inner lane gives way to outer-lane vehicles passing the exit (or taking the same one-lane exit); inner goes to
   the exit's left lane (`exitLane`). Exit spillback blocks only the ring lane the stuck vehicle came from.
+- Score (`stats()`, last 5 min of finished trips): `wait` = mean time queued beyond the map (`Vehicle.wt` starts at spawn − arrival)
+  plus every step below `WV` = 1 m/s on it; `offered` = arrivals/h; `score(wait, flow, offered)` = 100 × min(1, flow / offered)
+  × 30 / (30 + wait); `grade(wait)` on the HCM roundabout LOS delay bands (A ≤ 10 s, B 15, C 25, D 35, E 50, F). Both null / '–'
+  before 120 s. Seed 1, 20 min, pair 70 s, 100%: give-way 94 A (wait 2 s); Milea only adaptive 73, fixed 36 E;
+  both adaptive 31 F (56 s), fixed 11 F (201 s). At 200%: give-way 26, both adaptive 4, both fixed 2.
 - Units: metres, seconds, m/s. `DT = 0.1 s`. Ring centreline radius `RR = 16` m, lanes `LW = 3.4` m. Ring position `s` increases
   in the direction of travel (screen angle = `-s/RR`, right-hand traffic).
 - Bypasses (`slip` on an `ArmDef`, `Lane.slip` / `Lane.merge`): Coposu → Șaguna at Ramada, Dumbrăvii → V. Milea at Milea. A vehicle

@@ -1,4 +1,4 @@
-// Headless scenario comparison: 20 simulated minutes per scenario.
+// Headless scenario comparison: 20 simulated minutes per scenario (trip, wait, flow, score over the last 5 min).
 // Args: seed, share of drivers in the wrong lane (0–1), demand (1 = 100%), mix (0 = identical cars).
 import {createSim, mulberry32, type Ctrl, type Mode, type Plan} from '../src/sim';
 
@@ -10,7 +10,7 @@ for (const [ctrl, plan, cycle] of [['fixed', 'pair', 70], ['fixed', 'seq', 100],
     s.rbs.forEach((r, i) => r.mode = modes[i]);
     for (let i = 0; i < 12000; i++) s.step();
     const st = s.stats();
-    console.log(ctrl, plan, cycle, modes.join(','), 'trip', st.trip.toFixed(0), 'flow', st.flow.toFixed(0), 'stopped', st.stopped, 'backlog', st.backlog,
+    console.log(ctrl, plan, cycle, modes.join(','), 'trip', st.trip.toFixed(0), 'wait', st.wait.toFixed(0), 'flow', st.flow.toFixed(0), 'offered', st.offered.toFixed(0), 'score', st.score, st.grade, 'stopped', st.stopped, 'backlog', st.backlog,
       st.per.map(p => p.queued + ':' + p.worst + '/' + p.ring).join(' | '));
   }
 }
