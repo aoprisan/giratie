@@ -32,14 +32,24 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 - Car following: IDM (`AM`, `BM`, `TH`), plus a hard clamp against overlapping the vehicle ahead.
 - Give-way: enter when no ring vehicle is within `4 m + 1.9 s × its speed` upstream (vehicles exiting at this arm ignored).
 - Signals (`sig()`): per arm an entry light, a ring stop line just upstream of the entry (red while the entry is green),
-  and a pedestrian light on the exit (8 s window after the arm's green). Two plans: `pair` (corridor arms, then side arms)
+  and, on external arms with `xw`, a pedestrian crossing `xw` m from the ring centreline that holds both directions
+  (`crossStop` inbound, `outStop` outbound) during its 8 s window after the arm's green. Links have no crossing and no pedestrians. Two plans: `pair` (corridor arms, then side arms)
   and `seq` (one arm at a time).
 - Exit spillback: a vehicle held on an exit lane with its tail still in the ring blocks the ring (`over` in the ring step).
 - Adaptive control (`P.ctrl = 'adaptive'`, `control()`): signal groups per plan (pair: corridor/side; seq: per arm).
   Min green 7 s, gap-out after 2.5 s without a vehicle within 30 m of the stop line, max green = group's share of
-  `P.cycle`, skip groups with no vehicle within 60 m, rest on green without conflicting demand, bus within 120 m
-  calls/extends its green, green ends early when the ring is half full. 4 s clearance. Ped windows only on demand.
-- Links have a real length per direction (`ArmDef.len`, route leaving that arm) longer than drawn; the UI scales lane positions by drawn/real length.
+  `P.cycle`, skip groups with no vehicle within 60 m, rest on green without conflicting demand, a moving bus within 120 m
+  calls/extends its green (a bus standing in a queue does not, or it starves the other groups into gridlock), green ends early when the ring is half full. 4 s clearance. Ped windows only on demand.
+- Links have a real length per direction (`ArmDef.len`, route leaving that arm) longer than drawn; the UI compresses only the middle
+  of a link lane (last 20 m at each end at true scale), so queues sit at the drawn stop line.
+- Signal positions follow the city's Vissim model ("Fluxuri simultane", sibiu100.ro, 6 Oct 2026; local copy was
+  `~/Downloads/Semaforizare-adaptiva-1.webp`, 0.381 m/px from the OSM ring centres): at Ramada and Milea each arm has an entry
+  stop line ~6–9 m from the ring centreline plus a ring stop line just upstream of the entry (8 signalised stop lines per ring);
+  crossings: Coposu 45 m, Cioran 16, V. Milea 70, Noica 12, Dumbrăvii 43 (`xw`). Morilor is not in the image: crossings from OSM
+  (Morilor 17, Alba Iulia 26, Turismului 15). The image also shows two crossings on the westbound link (~146 and ~243 m from Ramada), not modelled.
+- Signal heads (`head()`, `kerbHeads()` in ui.ts) are drawn at those stop lines: entry and crossing vehicle heads on the kerb,
+  pedestrian heads at both kerbs, ring head on the central island at `sStop`. Kerb heads are nudged apart at low zoom.
+  Give-way: vehicle heads flash amber, entry line dashed.
 - `canEnter(a, len)` keeps the entrant's body (laid along the ring upstream of the entry) clear of ring vehicles;
   the ring stop line sits 6 m upstream of the entry so cars queued at it do not block a green entry.
 - Ring cap in `canEnter`: no entry above 60% (signals) / 85% (give-way) ring occupancy. Without it the signalised ring

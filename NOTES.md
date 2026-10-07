@@ -66,6 +66,28 @@ in favour of give-way. Change RR together with the two-lane ring.
 ### Possible follow-up
 Adaptive control could ignore detector presence when the held vehicle is blocked by keep-clear (gap-out instead).
 
+## Signal positions from the city's Vissim model (7 Oct 2026)
+Source: the "Fluxuri simultane" frame in sibiu100.ro's 6 Oct article (Ramada and Milea only). Signal bars read off the image:
+- Each ring: 4 entry stop lines (one per arm, both lanes) + 4 ring stop lines just upstream of each entry, so 8 per ring.
+  This matches the model's entry + ring signal structure.
+- Pedestrian crossings sit tens of metres out on the external arms only, with vehicle bars for both directions. The model had
+  them at every exit, 5.5 m from the ring. Now `xw` per arm (see `defs`); links have none. Morilor uses OSM crossing nodes.
+- The city's total is 163 vehicle and pedestrian signals over the whole axis (Milea to Alba Iulia × Bielz). Per-ring head counts can't be read from the image.
+
+Moving the crossings exposed a gridlock in `seq` adaptive: a bus stuck in a queue kept calling bus priority and starved
+the link entries forever. Now only a moving bus calls. Mean of 6 seeds, 20 simulated minutes (trip s / veh/h):
+
+| Scenario | Before | Real crossings |
+|---|---|---|
+| All give-way | 137 / 2,356 | 104 / 2,424 |
+| Milea only, fixed | 404 / 1,262 | 429 / 1,296 |
+| Milea only, adaptive | 343 / 1,676 | 293 / 1,846 |
+| All three, fixed | 490 / 1,242 | 502 / 1,190 |
+| All three, adaptive | 447 / 1,486 | 377 / 1,694 |
+| All three, adaptive `seq` | 376 / 878 | 514 / 1,296 |
+
+Give-way still wins clearly.
+
 ## Next modelling steps, by value
 1. **Two-lane rings and approaches with lane choice.** The city blamed >80% of the 6 Oct queues on wrong lane
    choice and lane changes inside the rings. The Milea → Dumbrăvii entry now has two marked lanes. This is the biggest gap.
