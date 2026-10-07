@@ -2,7 +2,7 @@
 import {createSim, mulberry32, type Ctrl, type Mode, type Plan} from '../src/sim';
 
 const seed = Number(process.argv[2] ?? 1);
-const scenarios: Mode[][] = [['classic', 'classic', 'classic'], ['classic', 'classic', 'signal'], ['signal', 'signal', 'signal']];
+const scenarios: Mode[][] = [['classic', 'classic'], ['classic', 'signal'], ['signal', 'signal']];
 for (const [ctrl, plan, cycle] of [['fixed', 'pair', 70], ['fixed', 'seq', 100], ['adaptive', 'pair', 70], ['adaptive', 'pair', 100], ['adaptive', 'seq', 100]] as [Ctrl, Plan, number][]) {
   for (const modes of scenarios) {
     const s = createSim({demand: 1, cycle, ped: 120, plan, ctrl}, mulberry32(seed));

@@ -1,7 +1,7 @@
 # Girație
 
-Traffic simulation of three signalised roundabouts in Sibiu (Milea × Calea Dumbrăvii, Piața Unirii · Ramada,
-Alba Iulia × Morilor). Switch each between give-way and signals and watch the queues.
+Traffic simulation of the two signalised roundabouts on Piața Unirii in Sibiu (Milea × Calea Dumbrăvii,
+Piața Unirii · Ramada). Switch each between give-way and signals and watch the queues.
 
 Live: https://aoprisan.github.io/giratie/
 

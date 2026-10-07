@@ -1,17 +1,16 @@
 # Girație
 
-Browser traffic microsimulation of Sibiu's roundabouts. First slice: the three roundabouts on the
-V. Milea – A. Șaguna – Șos. Alba Iulia corridor whose adaptive (Swarco) signals were switched on (and off again)
-on 6 Oct 2026. Compares give-way ("flashing amber") against fixed-time and adaptive signal control.
+Browser traffic microsimulation of Sibiu's roundabouts. First slice: the two Piața Unirii roundabouts whose
+adaptive (Swarco) signals were switched on (and off again) on 6 Oct 2026, as shown in the city's Vissim model. Compares give-way ("flashing amber") against fixed-time and adaptive signal control.
 
-Real intersections, as named by the city (2 Oct 2026), west to east:
-- `morilor`: Șos. Alba Iulia × Str. Morilor × Str. Turismului.
+Real intersections, west to east (the city named a third on 2 Oct 2026, Șos. Alba Iulia × Str. Morilor × Str. Turismului;
+it is not in the Vissim image, so it is commented out in `defs`):
 - `ramada`: Piața Unirii × Bd. Corneliu Coposu × Str. Andrei Șaguna × Str. Emil Cioran ("Ramada").
 - `milea`: Bd. Vasile Milea × Calea Dumbrăvii × Piața Unirii × Str. Constantin Noica ("blocul-plombă"; Noica runs under it).
 Geometry checked against OpenStreetMap on 7 Oct 2026 (see `defs` in sim.ts): arm angles keep the real spacing, each ring rotated
-so its links lie on the drawn corridor. Links: Morilor → Ramada 874 m (via Dealului, Banatului, Bd. Victoriei),
-Ramada → Morilor 686 m (Str. Andrei Șaguna is one-way westbound), Ramada ↔ Milea 195 m.
-Calibration point: ~3,000 vehicles 7–9 am at Milea × Dumbrăvii; the model gives ~1,750 veh/h entering at 100% demand.
+so its links lie on the drawn corridor. Link: Ramada ↔ Milea 195 m. Str. Andrei Șaguna is one-way westbound: an exit-only arm at Ramada (`flow` 0, `out` 900,
+the old Morilor arms' combined weight as a destination).
+Calibration point: ~3,000 vehicles 7–9 am at Milea × Dumbrăvii; the model gives ~1,460 veh/h through the network at 100% demand (give-way).
 
 ## Layout
 TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-singlefile`).
@@ -45,8 +44,8 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 - Signal positions follow the city's Vissim model ("Fluxuri simultane", sibiu100.ro, 6 Oct 2026; local copy was
   `~/Downloads/Semaforizare-adaptiva-1.webp`, 0.381 m/px from the OSM ring centres): at Ramada and Milea each arm has an entry
   stop line ~6–9 m from the ring centreline plus a ring stop line just upstream of the entry (8 signalised stop lines per ring);
-  crossings: Coposu 45 m, Cioran 16, V. Milea 70, Noica 12, Dumbrăvii 43 (`xw`). Morilor is not in the image: crossings from OSM
-  (Morilor 17, Alba Iulia 26, Turismului 15). The image also shows two crossings on the westbound link (~146 and ~243 m from Ramada), not modelled.
+  crossings: Coposu 45 m, Cioran 16, V. Milea 70, Noica 12, Dumbrăvii 43 (`xw`). The image also shows two crossings on Str. Andrei Șaguna
+  (~146 and ~243 m from Ramada), not modelled.
 - Signal heads (`head()`, `kerbHeads()` in ui.ts) are drawn at those stop lines: entry and crossing vehicle heads on the kerb,
   pedestrian heads at both kerbs, ring head on the central island at `sStop`. Kerb heads are nudged apart at low zoom.
   Give-way: vehicle heads flash amber, entry line dashed.
@@ -60,7 +59,7 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 ## Known simplifications (candidates for next work)
 - One ring lane and one lane per approach; the real roundabouts have more. This understates signalised capacity.
 - Per-arm flows (`flow`, veh/h) and signal timings are invented, scaled to the one published count. No real counts, no published phase plan.
-- Ring radius is `RR = 26` m for all three; OSM ring centrelines are 11–15 m radius with 2 lanes. The roundabouts are drawn
+- Ring radius is `RR = 26` m for both; OSM ring centrelines are 11–15 m radius with 2 lanes. The roundabouts are drawn
   on a straight corridor, not at their real positions. Vehicles queued past the map edge sit in `arm.backlog`.
 - No lane changing or lane-choice errors (the city blamed >80% of the 6 Oct queues on them), no coordination
   offsets between roundabouts, no intermediate signals on the links (e.g. at Banatului on the eastbound route).
