@@ -19,7 +19,12 @@ Then: lane-choice errors (`P.err`, "Drivers in the wrong lane" slider) to test t
 nothing under give-way; fixed-time vs adaptive matters far more. The errant drivers are polite (they stop and wait), so this is a
 lower bound on the harm.
 
-Next: aggressive errors (forcing across, conflicts that stop both ring lanes); real lane markings and arrows from the city.
+Then: aggressive errors (`P.agg`, "Of those, forcing their way"): erring drivers cut across the ring at the last moment,
+straddling both lanes for 3 s. They hurt most where signals are already saturated (both fixed at 125% demand: 383 s → 441–514 s,
+throughput 1,363 → ~1,100), a little under adaptive control, not at all under give-way. No gridlock. Details in CLAUDE.md.
+
+Next: real lane markings and arrows from the city (lane choice is by turning angle); a standoff model (both drivers stop) for
+forced cuts; coordination between the two rings.
 
 # Handoff notes – 7 Oct 2026
 
