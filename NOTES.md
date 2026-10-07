@@ -23,8 +23,13 @@ Then: aggressive errors (`P.agg`, "Of those, forcing their way"): erring drivers
 straddling both lanes for 3 s. They hurt most where signals are already saturated (both fixed at 125% demand: 383 s → 441–514 s,
 throughput 1,363 → ~1,100), a little under adaptive control, not at all under give-way. No gridlock. Details in CLAUDE.md.
 
-Next: real lane markings and arrows from the city (lane choice is by turning angle); a standoff model (both drivers stop) for
-forced cuts; coordination between the two rings.
+Then: no lane markings (`P.marked = false`, "Lane markings: none"); the user reports none on the roads. Adaptive signals lose
+50–70% on trip time (both rings 123 → 169–193 s; at 125% demand 204 → ~300 s), fixed-time little, give-way almost nothing.
+A first version locked a full ring for good (stagger behind stopped cars formed a circle); fixed, with a test.
+A Legea 544/2001 request (marking plan, markings on 6 Oct, Vissim model, signal plans, counts) is drafted as a Claude doc.
+
+Next: the city's real marking plan and signal plans once the 544 answer comes; a standoff model (both drivers stop) for forced
+cuts; coordination between the two rings.
 
 # Handoff notes – 7 Oct 2026
 
