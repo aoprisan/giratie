@@ -1,8 +1,15 @@
 # Girație
 
 Browser traffic microsimulation of Sibiu's roundabouts. First slice: the three roundabouts on the
-V. Milea – A. Șaguna – Șos. Alba Iulia corridor whose adaptive signals were switched on (and off again)
-on 6 Oct 2026. Compares give-way ("flashing amber") against signal control.
+V. Milea – A. Șaguna – Șos. Alba Iulia corridor whose adaptive (Swarco) signals were switched on (and off again)
+on 6 Oct 2026. Compares give-way ("flashing amber") against fixed-time and adaptive signal control.
+
+Real intersections, as named by the city (2 Oct 2026), west to east:
+- `morilor`: Șos. Alba Iulia × Str. Morilor × Str. Turismului.
+- `ramada`: Piața Unirii × Bd. Corneliu Coposu × Str. Andrei Șaguna × Str. Emil Cioran ("Ramada").
+- `milea`: Bd. Vasile Milea × Calea Dumbrăvii × Piața Unirii × Str. Constantin Noica ("blocul-plombă"; Noica runs under it).
+Links: Șaguna ≈ 900 m, Piața Unirii ≈ 260 m (estimates; map services were unreachable, so angles are schematic).
+Calibration point: ~3,000 vehicles 7–9 am at Milea × Dumbrăvii; the model gives ~1,750 veh/h entering at 100% demand.
 
 ## Layout
 TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-singlefile`).
@@ -26,14 +33,22 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
   and a pedestrian light on the exit (8 s window after the arm's green). Two plans: `pair` (corridor arms, then side arms)
   and `seq` (one arm at a time).
 - Exit spillback: a vehicle held on an exit lane with its tail still in the ring blocks the ring (`over` in the ring step).
+- Adaptive control (`P.ctrl = 'adaptive'`, `control()`): signal groups per plan (pair: corridor/side; seq: per arm).
+  Min green 7 s, gap-out after 2.5 s without a vehicle within 30 m of the stop line, max green = group's share of
+  `P.cycle`, skip groups with no vehicle within 60 m, rest on green without conflicting demand, bus within 120 m
+  calls/extends its green, green ends early when the ring is half full. 4 s clearance. Ped windows only on demand.
+- Links have a real length (`ArmDef.len`) longer than drawn; the UI scales lane positions by drawn/real length.
+- `canEnter(a, len)` keeps the entrant's body (laid along the ring upstream of the entry) clear of ring vehicles;
+  the ring stop line sits 6 m upstream of the entry so cars queued at it do not block a green entry.
 - Ring cap in `canEnter`: no entry above 60% (signals) / 85% (give-way) ring occupancy. Without it the signalised ring
   fills completely and deadlocks permanently.
 
 ## Known simplifications (candidates for next work)
 - One ring lane and one lane per approach; the real roundabouts have more. This understates signalised capacity.
-- Flows (`flow` per arm, veh/h) and signal timings are invented. No real counts, no published phase plan.
+- Per-arm flows (`flow`, veh/h) and signal timings are invented, scaled to the one published count. No real counts, no published phase plan.
 - Schematic geometry; the Șaguna link is shortened. Vehicles queued past the map edge sit in `arm.backlog`.
-- No lane changing, no adaptive (demand-responsive) signal logic, no coordination offsets between roundabouts.
+- No lane changing or lane-choice errors (the city blamed >80% of the 6 Oct queues on them), no coordination
+  offsets between roundabouts, no intermediate signals on Șaguna (e.g. Banatului).
 - Bus tails are drawn along the ring while entering (visual only).
 
 ## Conventions

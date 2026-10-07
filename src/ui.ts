@@ -1,5 +1,5 @@
 // Canvas rendering, controls and readouts. Colours come from CSS tokens on :root.
-import {createSim, type Mode, type Params, type Plan, type Sim, type Vehicle} from './sim';
+import {createSim, type Ctrl, type Mode, type Params, type Plan, type Sim, type Vehicle} from './sim';
 
 const COLOR_KEYS = ['ground', 'road', 'mark', 'island', 'car', 'stop', 'slow', 'go', 'ped', 'bus', 'ink', 'muted', 'line', 'accent', 'surface'] as const;
 type ColorKey = typeof COLOR_KEYS[number];
@@ -11,7 +11,7 @@ function $<T extends HTMLElement = HTMLElement>(id: string): T {
 }
 
 export function start(): void {
-  const P: Params = {demand: 1, cycle: 70, ped: 120, plan: 'pair'};
+  const P: Params = {demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'};
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let sim: Sim, speed = 2, paused = reduce, modes: Mode[] = ['classic', 'classic', 'signal'];
   let hist: {t: number; v: number}[] = [], marks: number[] = [], lastHist = 0;
@@ -86,6 +86,7 @@ export function start(): void {
     const vw = Math.max(2.3, 2.2 / sc);
     const vc = (v: Vehicle) => v.bus ? col.bus : v.v < 0.5 ? col.stop : v.v < 4 ? col.slow : col.car;
     for (const l of sim.lanes) {
+      // Positions scale by drawn/real length, so links longer than drawn (Șaguna, Piața Unirii) appear compressed.
       const dx = (l.bx - l.ax) / l.L, dy = (l.by - l.ay) / l.L;
       for (const v of l.veh) {
         ctx.strokeStyle = vc(v); ctx.lineWidth = v.bus ? vw + 0.5 : vw;
@@ -108,7 +109,7 @@ export function start(): void {
       for (const a of rb.arms) {
         if (!a.name) continue;
         const n = a.backlog.length;
-        if (a.link >= 0) { txt(a.name, rb.x + (sim.rbs[a.link].x - rb.x) / 2, rb.y + 17, 'center', col.muted, f1); continue; }
+        if (a.link >= 0) { txt(a.name + (a.len ? ` · ~${a.len} m` : ''), rb.x + (sim.rbs[a.link].x - rb.x) / 2, rb.y + 17, 'center', col.muted, f1); continue; }
         if (Math.abs(a.ux) > 0.7) {
           const x = rb.x + a.ux * (RR + K.ARM * 0.62);
           txt(a.name, x, rb.y - 11, 'center', col.muted, f1); if (n) txt('+' + n, x, rb.y + 17, 'center', col.stop, f2);
@@ -151,7 +152,7 @@ export function start(): void {
   sim!.rbs.forEach((rb, i) => {
     const d = document.createElement('div'); d.className = 'card';
     d.innerHTML = `<h2>${rb.name}</h2><div class="seg" role="group" aria-label="Control at ${rb.name}"><button type="button" id="m${i}c">Give-way</button><button type="button" id="m${i}s">Signals</button></div>
-  <span class="pill" id="p${i}"></span><dl><dt>Stopped on its approaches</dt><dd id="q${i}">0</dd><dt>Longest queue</dt><dd id="w${i}">–</dd><dt>Vehicles in the ring</dt><dd id="r${i}">0</dd></dl>`;
+  <span class="pill" id="p${i}"></span><dl><dt>Stopped on its approaches</dt><dd id="q${i}">0</dd><dt>Longest queue</dt><dd id="w${i}">–</dd><dt>Vehicles in the ring</dt><dd id="r${i}">0</dd><dt>Green now</dt><dd id="g${i}">–</dd></dl>`;
     cards.appendChild(d);
     $('m' + i + 'c').onclick = () => setModes(modes.map((m, j) => j === i ? 'classic' : m));
     $('m' + i + 's').onclick = () => setModes(modes.map((m, j) => j === i ? 'signal' : m));
@@ -189,6 +190,9 @@ export function start(): void {
   const planEl = $<HTMLSelectElement>('plan');
   planEl.onchange = () => { P.plan = planEl.value as Plan; marks.push(sim.t); };
   P.plan = planEl.value as Plan;
+  const ctrlEl = $<HTMLSelectElement>('ctrl');
+  ctrlEl.onchange = () => { P.ctrl = ctrlEl.value as Ctrl; marks.push(sim.t); };
+  P.ctrl = ctrlEl.value as Ctrl;
 
   const p2 = (n: number) => String(n).padStart(2, '0');
   function readouts(): void {
@@ -201,6 +205,7 @@ export function start(): void {
       $('q' + i).textContent = String(p.queued);
       $('w' + i).textContent = p.worstN ? p.worst + ' · ' + p.worstN : '–';
       $('r' + i).textContent = String(p.ring);
+      $('g' + i).textContent = modes[i] === 'signal' ? p.green || 'all red' : '–';
     });
     if (s.t - lastHist >= 5 || !hist.length) { lastHist = s.t; hist.push({t: s.t, v: s.stopped + s.backlog}); if (hist.length > 240) hist.shift(); }
     spark();
