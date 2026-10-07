@@ -22,7 +22,7 @@
   </div>
   <button class="btn" id="pause" type="button">Pause</button>
   <button class="btn" id="reset" type="button">Restart</button>
-  <label>Speed <select id="speed"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option><option value="8">8×</option></select></label>
+  <label>Speed <select id="speed"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option><option value="8">8×</option><option value="16">16×</option></select></label>
   <div class="clock"><small>simulated time</small><span id="clock">10:00:00</span></div>
 </div>
 
@@ -32,6 +32,7 @@
   <span><i style="background:var(--slow)"></i>crawling</span>
   <span><i style="background:var(--stop)"></i>stopped</span>
   <span><i style="background:var(--bus)"></i>articulated bus</span>
+  <span>lorries and vans drawn wider and longer than cars</span>
   <span><i style="background:var(--wrong)"></i>in the wrong lane</span>
   <span><i style="background:var(--ped);width:6px;height:6px;border-radius:50%"></i>pedestrian</span>
   <span><i class="bar"></i>&nbsp;&nbsp;signal: each stop line in the colour of its light (entry, ring, crossings), as in the city’s model</span>
@@ -45,8 +46,8 @@
   <div class="panel">
     <h2>Conditions</h2>
     <div class="ctl"><label for="demand">Traffic demand</label><output id="demand-o">100%</output>
-      <input id="demand" type="range" min="40" max="150" step="5" value="100">
-      <small>100% is about 1,850 vehicles an hour entering the corridor, a little under what the two-lane rings can carry.</small></div>
+      <input id="demand" type="range" min="40" max="300" step="5" value="100">
+      <small>100% is about 1,850 vehicles an hour entering the corridor, a little under what the two-lane rings can carry. Up to 300% stress-tests them: queues spill past the edge of the map (“+N”).</small></div>
     <div class="ctl"><label for="cycle">Signal cycle</label><output id="cycle-o">70 s</output>
       <input id="cycle" type="range" min="40" max="120" step="5" value="70">
       <small>Time for every approach to get one green.</small></div>
@@ -59,6 +60,9 @@
     <div class="ctl"><label for="agg">Of those, forcing their way</label><output id="agg-o">0%</output>
       <input id="agg" type="range" min="0" max="100" step="10" value="0">
       <small>These only notice inside the ring and cut straight across it, straddling both lanes for 3 seconds: whoever is behind in either lane has to stop.</small></div>
+    <div class="ctl"><label for="mix">Vehicles</label><span></span>
+      <select id="mix" style="grid-column:1/-1"><option value="yes" selected>Mixed: cars, vans, lorries and buses, every driver a little different</option><option value="no">Identical cars (plus buses), every driver the same</option></select>
+      <small>In the mix, 7% are vans and 2% lorries; heavy vehicles and buses pull away slowly from a stop line. Drivers differ in speed, following distance, acceleration and the gaps they accept.</small></div>
     <div class="ctl"><label for="plan">Signal plan</label><span></span>
       <select id="plan" style="grid-column:1/-1"><option value="pair" selected>Corridor arms together, then side streets</option><option value="seq">One approach at a time</option></select>
       <small>Both are my guesses. The city has not published its phase plan.</small></div>
@@ -89,6 +93,7 @@
   <p>Adaptive control works the way the city described it: detectors in each approach keep a green running while traffic keeps arriving, cut it after a gap of 2.5 s, skip approaches with nobody waiting, and give an approaching bus its green early. A green also ends early when the ring is half full. Pedestrian windows open only when someone is waiting.</p>
   <p>Rings and approaches have two lanes where the city’s model draws them. Drivers pick a lane for where they are going: the right lane to turn right, the left to turn left, either to go straight on. Traffic from the right lane circles in the outer ring lane, from the left lane in the inner one; leaving from the inner lane means crossing the outer one, so those drivers give way. The city blamed most of the 6 October queues on drivers in the wrong lane; the “Drivers in the wrong lane” slider tests that. Those drivers notice late and stop before the stop line to squeeze across, or cut across inside the ring, stopping there if they must, and show in pink. In this model even 30% of drivers in the wrong lane add at most about 15% to trip times under signals and nothing under give-way: the choice between fixed-time and adaptive signals matters far more. The second slider makes some of them force their way instead: they only notice inside the ring and cut straight across it at the last moment, straddling both lanes so traffic behind them in either lane has to stop. That does hurt where the signals are already saturated, with fixed-time signals on both roundabouts at a busy peak up to a third slower, but adaptive signals absorb most of it and give-way none of it. Wrong lanes make a signal problem worse; in this model they do not create one.</p>
   <p>On 6 October the lanes had no markings at all, and the city said the signals would come back once they were repainted. The “Lane markings: none” setting models that: drivers take either lane, find out inside the ring and cut across, and do not drive side by side. It costs adaptive signals half as much time again or more (both roundabouts: about 2 minutes a trip becomes about 3, more at a busy peak) and give-way almost nothing. Missing markings explain a good part of that morning; even with them painted, the signals here stay slower than give-way. Traffic volumes and signal timings are assumptions, so read the result as a direction, never as a forecast.</p>
+  <p>Traffic is mixed: besides cars of different lengths there are vans, lorries and articulated buses, and every driver has their own preferred speed, following distance, acceleration and the gaps they will accept. Heavy vehicles pull away slowly from a stop line, which costs the signals green time, up to twice the trip time with adaptive signals on both roundabouts, while give-way hardly notices. Set “Vehicles” to identical cars to compare. The demand slider goes up to 300%: give-way then carries about 3,000 vehicles an hour, adaptive signals about 1,900 and fixed-time about 1,200, and the rest queue beyond the map.</p>
   <p>Sources: <a href="https://www.turnulsfatului.ro/2026/10/06/un-pic-de-haos-domnule-un-singur-semafor-de-giratoriu-a-pornit-marti-dimineata-tocmai-cel-unde-pietonii-erau-obligati-sa-se-amestece-printre-masini/">Turnul Sfatului, 6 October 2026</a>; <a href="https://www.turnulsfatului.ro/2026/10/02/semafoarele-din-giratoiu-vor-fi-puse-in-functiune-de-marti-6-octombrie-anunt-oficial-de-la-primarie/">city announcement, 2 October</a>; <a href="https://mesageruldesibiu.ro/3-000-de-masini-in-doua-ore-intersectiile-din-sibiu-unde-vor-functiona-semafoarele-smart/">Mesagerul de Sibiu</a> (about 3,000 vehicles between 7 and 9 am at Milea × Dumbrăvii); <a href="https://www.turnulsfatului.ro/2026/10/07/semafoarele-din-giratoriile-sibiului-vor-fi-repornite-dupa-refacerea-marcajelor-rutiere-peste-80-din-deficiente-au-avut-drept-cauza-incadrarile-gresite/">Turnul Sfatului, 7 October</a>. The signals at Milea × Dumbrăvii ran for about two hours and were put back on flashing amber.</p>
 </div>
 </div>

@@ -22,7 +22,13 @@ export interface Params {
   /** Lane markings painted (default). `false`: none, as on the roads on 6 Oct: drivers take either approach lane, do not
    *  change before the ring, sort out their ring lane inside it, and do not drive side by side on the ring. */
   marked?: boolean;
+  /** Mixed traffic (default): cars of varying length, vans and lorries, slow-accelerating buses, and drivers who differ
+   *  in desired speed, headway, acceleration and the gaps they accept. `false`: every car alike, as before. */
+  mix?: boolean;
 }
+
+/** Vehicle class. Buses are articulated city buses (bus priority); lorries include delivery trucks. */
+export type Kind = 'car' | 'van' | 'lorry' | 'bus';
 
 export interface Signal {
   entry: 'g' | 'a' | 'r';
@@ -43,6 +49,13 @@ export interface Pending {
   agg: boolean;
   /** Approach lane taken when there are no markings. */
   side: number;
+  kind: Kind;
+  len: number;
+  /** Driver: desired-speed factor, time headway (s), maximum acceleration (m/s²), give-way gap factor. */
+  vf: number;
+  th: number;
+  am: number;
+  gf: number;
 }
 
 export interface Vehicle {
@@ -50,6 +63,12 @@ export interface Vehicle {
   v: number;
   len: number;
   bus: boolean;
+  kind: Kind;
+  /** Driver: desired-speed factor, time headway (s), maximum acceleration (m/s²), give-way gap factor (see `Pending`). */
+  vf: number;
+  th: number;
+  am: number;
+  gf: number;
   t0: number;
   dest: Arm;
   lane: Lane | null;
@@ -544,7 +563,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
   const exitLane = (ex: Arm, ri: number) => ex.outL[Math.min(ri, ex.outL.length - 1)];
   /** May a vehicle of length `len` enter ring lane `k` from `a` now? Its body is laid along the ring upstream of the entry.
    *  The outer lane yields to the outer lane; the inner lane crosses the outer one, so it yields to both. */
-  function canEnter(a: Arm, len: number, ex: Arm, k: number): boolean {
+  function canEnter(a: Arm, len: number, ex: Arm, k: number, gf = 1): boolean {
     const rb = a.rb, strict = !(a.sg && a.sg.ring);
     let occ = 6.5; for (const o of rb.veh) occ += o.len + 2;
     if (occ > 2 * C * (rb.mode === 'signal' ? 0.6 : 0.85)) return false;
@@ -565,7 +584,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
       if (ri === k ? d - o.len < 2.5 : d - o.len < 0.5) return false;
       const du = C - d;
       if (ri === k && o.exit !== a && du < len + 0.5) return false;
-      if (strict) { if (o.exit !== a && du < 4 + o.v * 1.9) return false; }
+      if (strict) { if (o.exit !== a && du < (4 + o.v * 1.9) * gf) return false; }
       else if (du < 0.3 || (o.v > 2 && du < 3 + o.v)) return false;
     }
     return true;
@@ -593,16 +612,31 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
   /** Lane markings painted? Read from `P` each step, so it can be switched while running. */
   let marked = true;
   // Intelligent Driver Model.
-  const AM = 1.8, BM = 2.5, TH = 1.1, SQ = 2 * Math.sqrt(AM * BM);
-  function term(v: number, gap: number, dv: number, s0: number): number {
-    const ss = s0 + Math.max(0, v * TH + v * dv / SQ); const r = ss / Math.max(gap, 0.1); return r * r;
+  // Each driver has its own headway `th` and acceleration `am` (all AM / TH without the mix); BM is shared.
+  const AM = 1.8, BM = 2.5, TH = 1.1;
+  function term(v: Vehicle, gap: number, dv: number, s0: number): number {
+    const ss = s0 + Math.max(0, v.v * v.th + v.v * dv / (2 * Math.sqrt(v.am * BM))); const r = ss / Math.max(gap, 0.1); return r * r;
   }
   function advance(v: Vehicle, v0: number, inter: number, hard: number): number {
-    let acc = AM * (1 - Math.pow(v.v / v0, 4) - inter); if (acc < -8) acc = -8;
+    v0 *= v.vf;
+    let acc = v.am * (1 - Math.pow(v.v / v0, 4) - inter); if (acc < -8) acc = -8;
     v.v = Math.max(0, v.v + acc * DT);
     let ds = v.v * DT;
     if (ds > hard - 0.3) { ds = Math.max(0, hard - 0.3); v.v = Math.min(v.v, ds / DT); }
     return ds;
+  }
+
+  /** Vehicle class and driver traits for a new arrival. The draws always consume `rng`, so runs with and without the
+   *  mix see the same demand. Mix: 7% vans (6.5 m), 2% lorries (10 m), the rest cars of 4.0–5.0 m; desired speed ±12%,
+   *  headway 0.8–1.5 s, gaps accepted 0.8–1.25 × the standard; heavy vehicles accelerate at about 1 m/s². */
+  function traits(bus: boolean): {kind: Kind; len: number; vf: number; th: number; am: number; gf: number} {
+    const r = [rng(), rng(), rng(), rng(), rng(), rng()];
+    if (P.mix === false) return {kind: bus ? 'bus' : 'car', len: bus ? 17 : 4.5, vf: 1, th: TH, am: AM, gf: 1};
+    const kind: Kind = bus ? 'bus' : r[0] < 0.07 ? 'van' : r[0] < 0.09 ? 'lorry' : 'car';
+    const len = kind === 'bus' ? 17 : kind === 'lorry' ? 10 : kind === 'van' ? 6.5 : 4 + r[1];
+    const am = kind === 'car' ? 1.5 + 0.6 * r[2] : kind === 'van' ? 1.3 + 0.3 * r[2] : 0.9 + 0.2 * r[2];
+    const vf = (kind === 'car' ? 0.88 : 0.82) + 0.24 * r[3];
+    return {kind, len, vf, th: 0.8 + 0.7 * r[4] + (kind === 'car' ? 0 : 0.2), am, gf: 0.8 + 0.45 * r[5]};
   }
 
   function step(): void {
@@ -623,7 +657,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     }
     for (const a of arms) {
       if (a.link < 0 && a.flow) {
-        if (rng() < a.flow * P.demand / 3600 * DT) { const dest = pickDest(a); a.backlog.push({t, dest, bus: rng() < 0.035, err: rng() < (P.err ?? 0), agg: rng() < (P.agg ?? 0), side: rng() < 0.5 ? 1 : 0}); }
+        if (rng() < a.flow * P.demand / 3600 * DT) { const dest = pickDest(a), bus = rng() < 0.035; a.backlog.push({t, dest, bus, err: rng() < (P.err ?? 0), agg: rng() < (P.agg ?? 0), side: rng() < 0.5 ? 1 : 0, ...traits(bus)}); }
         if (a.backlog.length) {
           // Straight on: the lane with fewer vehicles. A share `P.err` of drivers who need one lane take the other.
           // No markings: either lane, and no lane change before the ring.
@@ -631,7 +665,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
           const l = a.inL[bare ? b.side : w >= 0 ? (wrong ? 1 - w : w) : a.inL[1].veh.length < a.inL[0].veh.length ? 1 : 0], tl = l.veh[l.veh.length - 1];
           if (!tl || tl.pos - tl.len > 7) {
             a.backlog.shift();
-            l.veh.push({pos: 0, v: tl ? Math.min(11, tl.v + 2) : 11, len: b.bus ? 17 : 4.5, bus: b.bus, t0: b.t, dest: b.dest, lane: l, rb: null, s: 0, exit: null, step: n,
+            l.veh.push({pos: 0, v: tl ? Math.min(11, tl.v + 2) : 11, len: b.len, bus: b.bus, kind: b.kind, vf: b.vf, th: b.th, am: b.am, gf: b.gf, t0: b.t, dest: b.dest, lane: l, rb: null, s: 0, exit: null, step: n,
               ri: 0, err: bare ? 2 : wrong ? (b.agg ? 2 : 1) : 0, wait: -1, rw: -1, hs: 0, agg: b.agg, both: -1});
           }
         }
@@ -662,7 +696,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
             const dh = mod(v.hs - 1 - v.s, C);
             if (dh < dEx) {
               if (v.v < 0.5 && dh < 2) { if (v.wait < 0) v.wait = t; else if (t - v.wait > ERRW) v.rw = -1; }
-              if (v.rw >= 0) { inter = Math.max(inter, term(v.v, dh, v.v, 0.3)); hard = Math.min(hard, dh + 0.3); }
+              if (v.rw >= 0) { inter = Math.max(inter, term(v, dh, v.v, 0.3)); hard = Math.min(hard, dh + 0.3); }
             } else v.rw = -1;
           }
         }
@@ -671,11 +705,11 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
           if (o.ri !== v.ri && !(o.both > t)) {
             // No lane line: drivers stagger behind a moving car in the other lane rather than drive beside it, but pull up
             // beside one that has stopped (else a full ring locks in one chain of cars each waiting for the next).
-            if (!marked && o.v > 2) { const gap = mod(o.s - v.s, C) - o.len + STAG; if (gap < dEx) inter = Math.max(inter, term(v.v, gap, v.v - o.v, 2)); }
+            if (!marked && o.v > 2) { const gap = mod(o.s - v.s, C) - o.len + STAG; if (gap < dEx) inter = Math.max(inter, term(v, gap, v.v - o.v, 2)); }
             continue;
           }
           const gap = mod(o.s - v.s, C) - o.len;
-          if (gap < dEx) { inter = Math.max(inter, term(v.v, gap, v.v - o.v, 2)); hard = Math.min(hard, gap); }
+          if (gap < dEx) { inter = Math.max(inter, term(v, gap, v.v - o.v, 2)); hard = Math.min(hard, gap); }
         }
         // Leaving from the inner lane crosses the outer one: give way to outer-lane traffic passing (or taking the same
         // single exit lane) at this exit.
@@ -683,16 +717,16 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
           for (const o of rb.veh) {
             if ((o.ri !== 0 && !(o.both > t)) || o === v || (o.exit === ex && ex.outL.length > 1)) continue;
             if (mod(ex.sExit - o.s, C) < 3 + o.v * 1.5 || mod(o.s - ex.sExit, C) < o.len + 0.5) {
-              inter = Math.max(inter, term(v.v, dEx, v.v, 0.6)); hard = Math.min(hard, dEx); break;
+              inter = Math.max(inter, term(v, dEx, v.v, 0.6)); hard = Math.min(hard, dEx); break;
             }
           }
         }
         const ol = exitLane(ex, v.ri), tail = ol.veh[ol.veh.length - 1];
-        if (tail) { const gap = dEx + tail.pos - tail.len; inter = Math.max(inter, term(v.v, gap, v.v - tail.v, 2)); hard = Math.min(hard, gap); }
-        for (const st of ol.stops) if (stopBlocked(st)) inter = Math.max(inter, term(v.v, dEx + st.pos, v.v, 0.6));
+        if (tail) { const gap = dEx + tail.pos - tail.len; inter = Math.max(inter, term(v, gap, v.v - tail.v, 2)); hard = Math.min(hard, gap); }
+        for (const st of ol.stops) if (stopBlocked(st)) inter = Math.max(inter, term(v, dEx + st.pos, v.v, 0.6));
         for (const a of rb.arms) {
           // Ring stop lines; a vehicle leaving at that arm has turned off before it.
-          if (a !== ex && a.sg && a.sg.ring) { const d = mod(a.sStop - v.s, C); if (d < dEx) inter = Math.max(inter, term(v.v, d, v.v, 0.6)); }
+          if (a !== ex && a.sg && a.sg.ring) { const d = mod(a.sStop - v.s, C); if (d < dEx) inter = Math.max(inter, term(v, d, v.v, 0.6)); }
           if (a !== ex) {
             // Exit spillback: a vehicle on another exit lane whose tail is still in this ring lane blocks it.
             for (const xl of a.outL) {
@@ -701,13 +735,13 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
               const over = tl.len - tl.pos;
               if (over > 0) {
                 const dx = mod(a.sExit - v.s, C);
-                if (dx < dEx) { const gap = dx - over; inter = Math.max(inter, term(v.v, gap, v.v - tl.v, 2)); hard = Math.min(hard, gap); }
+                if (dx < dEx) { const gap = dx - over; inter = Math.max(inter, term(v, gap, v.v - tl.v, 2)); hard = Math.min(hard, gap); }
               }
             }
             }
           }
         }
-        const ds = advance(v, v.both > t ? 4 : 7.5, inter, hard);
+        const ds = advance(v, v.both > t ? 4 / v.vf : 7.5, inter, hard);
         if (ds >= dEx) {
           rb.veh.splice(rb.veh.indexOf(v), 1); v.rb = null; v.lane = ol; v.pos = ds - dEx; ol.veh.push(v);
           // Onto a link: a share `P.err` of drivers do not change lanes early for the next ring.
@@ -742,22 +776,22 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
         const ix = l.veh.indexOf(v);
         if (ix > 0) {
           const ld = l.veh[ix - 1];
-          if (!(slip && ld.pos - ld.len > slip.at)) { const gap = ld.pos - ld.len - v.pos; inter = term(v.v, gap, v.v - ld.v, 2); hard = gap; }
+          if (!(slip && ld.pos - ld.len > slip.at)) { const gap = ld.pos - ld.len - v.pos; inter = term(v, gap, v.v - ld.v, 2); hard = gap; }
         }
-        for (const st of l.stops) if (st.pos > v.pos - 0.2 && !(slip && st.pos > slip.at) && stopBlocked(st)) inter = Math.max(inter, term(v.v, st.pos - v.pos, v.v, 0.6));
-        if (hold > v.pos - 0.2) { inter = Math.max(inter, term(v.v, hold - v.pos, v.v, 0.5)); hard = Math.min(hard, hold - v.pos + 0.3); }
+        for (const st of l.stops) if (st.pos > v.pos - 0.2 && !(slip && st.pos > slip.at) && stopBlocked(st)) inter = Math.max(inter, term(v, st.pos - v.pos, v.v, 0.6));
+        if (hold > v.pos - 0.2) { inter = Math.max(inter, term(v, hold - v.pos, v.v, 0.5)); hard = Math.min(hard, hold - v.pos + 0.3); }
         const d = l.L - v.pos;
         let enter = false, v0 = l.merge ? 8 : 12.5;
         if (l.endArm) {
           v0 = 7.5 + 5 * Math.min(1, Math.max(0, (d - 10) / 50));
           if (slip) v0 = 12.5;
           else if (l.veh[0] === v && d < 45) {
-            enter = canEnter(l.endArm, v.len, exitFor(l.endArm.rb, v.dest), l.k);
-            if (!enter) { inter = Math.max(inter, term(v.v, d, v.v, 0.8)); hard = Math.min(hard, d + 0.25); }
+            enter = canEnter(l.endArm, v.len, exitFor(l.endArm.rb, v.dest), l.k, v.gf);
+            if (!enter) { inter = Math.max(inter, term(v, d, v.v, 0.8)); hard = Math.min(hard, d + 0.25); }
           } else if (l.veh[0] !== v) hard = Math.min(hard, d + 0.25);
         } else if (l.merge && l.veh[0] === v && d < 30) {
           enter = canMerge(l.merge, v);
-          if (!enter) { inter = Math.max(inter, term(v.v, d, v.v, 0.8)); hard = Math.min(hard, d + 0.25); }
+          if (!enter) { inter = Math.max(inter, term(v, d, v.v, 0.8)); hard = Math.min(hard, d + 0.25); }
         }
         v.pos += advance(v, v0, inter, hard);
         if (slip && v.pos >= slip.at) {
