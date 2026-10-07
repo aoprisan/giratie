@@ -33,6 +33,7 @@
   <span><i style="background:var(--stop)"></i>stopped</span>
   <span><i style="background:var(--bus)"></i>articulated bus</span>
   <span><i style="background:var(--ped);width:6px;height:6px;border-radius:50%"></i>pedestrian</span>
+  <span><i class="sh"></i>signal head: at the entry and crossing stop lines on the kerb, on the central island for the ring</span>
   <span>“+N” = vehicles queued beyond the edge of the map</span>
 </div>
 
@@ -72,7 +73,7 @@
 
 <div class="notes">
   <h2>What this models, and what it does not</h2>
-  <p>Each car follows the one ahead with the Intelligent Driver Model. On give-way, a car enters when the ring is clear to its left. On signals, each approach has an entry light, a stop line on the ring just before it, and a pedestrian light on the exit. A vehicle held at an exit light can leave its tail across the ring, which is how the articulated buses blocked the Dumbrăvii direction on the morning described in the article.</p>
+  <p>Each car follows the one ahead with the Intelligent Driver Model. On give-way, a car enters when the ring is clear to its left. On signals, each approach has an entry light, a stop line on the ring just before it, and, on the arms that have one, a signalised pedestrian crossing a short way out with lights for both directions. The lights stand where the city’s own traffic model shows them (Ramada, Milea) or where OpenStreetMap maps the crossings (Morilor). A queue held at an exit crossing can reach back across the ring, which is how the articulated buses blocked the Dumbrăvii direction on the morning described in the article.</p>
   <p>The three roundabouts and their arms are the ones the city named: Șos. Alba Iulia × Str. Morilor × Str. Turismului; Piața Unirii × Bd. Corneliu Coposu × Str. Andrei Șaguna × Str. Emil Cioran (“Ramada”); and Bd. Vasile Milea × Calea Dumbrăvii × Piața Unirii × Str. Constantin Noica, the street that passes under the “blocul-plombă”. The links are modelled at their real route lengths from OpenStreetMap but drawn compressed: Str. Andrei Șaguna is one-way westbound (686 m), eastbound traffic goes round via Str. Banatului and Bd. Victoriei (874 m), and Piața Unirii is 195 m. The arms keep their real angles around each roundabout; the map is straightened so the corridor runs left to right.</p>
   <p>Adaptive control works the way the city described it: detectors in each approach keep a green running while traffic keeps arriving, cut it after a gap of 2.5 s, skip approaches with nobody waiting, and give an approaching bus its green early. A green also ends early when the ring is half full. Pedestrian windows open only when someone is waiting.</p>
   <p>The layout is still a schematic. Each roundabout has one ring lane and one lane per approach, the real ones have two in places, so lane-choice errors, which the city blamed for most of the 6 October queues, are not modelled. Traffic volumes and signal timings are assumptions, so read the result as a direction, never as a forecast. A single-lane ring has little room to store vehicles between stop lines, and that flatters give-way here.</p>

@@ -1,7 +1,7 @@
 // Canvas rendering, controls and readouts. Colours come from CSS tokens on :root.
 import {createSim, type Ctrl, type Mode, type Params, type Plan, type Sim, type Vehicle} from './sim';
 
-const COLOR_KEYS = ['ground', 'road', 'mark', 'island', 'car', 'stop', 'slow', 'go', 'ped', 'bus', 'ink', 'muted', 'line', 'accent', 'surface'] as const;
+const COLOR_KEYS = ['ground', 'road', 'mark', 'island', 'car', 'stop', 'slow', 'go', 'ped', 'bus', 'ink', 'muted', 'line', 'accent', 'surface', 'head', 'lampoff'] as const;
 type ColorKey = typeof COLOR_KEYS[number];
 
 function $<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -45,8 +45,37 @@ export function start(): void {
     ctx.font = font || '500 12px Barlow, sans-serif'; ctx.textAlign = align; ctx.fillStyle = c;
     ctx.fillText(s, (wx - minX) * sc, (wy - minY) * sc + dy); ctx.restore();
   }
+  /** Text along a road at angle `ang` through (wx, wy), kept upright, `off` px beside it, screen-upper side if negative. */
+  function roadTxt(s: string, wx: number, wy: number, ang: number, c: string, font: string, off: number): void {
+    const up = Math.cos(ang) < 0 ? ang + Math.PI : ang;
+    ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.translate((wx - minX) * sc, (wy - minY) * sc); ctx.rotate(up);
+    ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = off < 0 ? 'bottom' : 'top'; ctx.fillStyle = c;
+    ctx.fillText(s, 0, off); ctx.restore();
+  }
   function dot(x: number, y: number, r: number, c: string): void {
     ctx.beginPath(); ctx.arc(x, y, Math.max(r, 2.6 / sc), 0, 6.2832); ctx.fillStyle = c; ctx.fill();
+  }
+
+  /** A signal head drawn in screen pixels: lamps stacked from (wx, wy) along world direction (dx, dy); '' = lamp off. */
+  function head(wx: number, wy: number, dx: number, dy: number, lamps: string[]): void {
+    const R = 1.5, PITCH = 3.6, X = (wx - minX) * sc, Y = (wy - minY) * sc, len = lamps.length * PITCH + 1.2;
+    ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.translate(X, Y); ctx.rotate(Math.atan2(dy, dx));
+    ctx.fillStyle = col.head; ctx.beginPath(); ctx.roundRect(-0.6, -2.4, len, 4.8, 1.4); ctx.fill();
+    lamps.forEach((c, i) => {
+      ctx.beginPath(); ctx.arc(PITCH * (i + 0.5), 0, R, 0, 6.2832); ctx.fillStyle = c || col.lampoff; ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  /** Heads on one kerb (side 1 = inbound, -1 = outbound), lamps stacked away from the road, each near its stop line
+   *  at distance `u` from the ring centre, nudged outward so the housings never overlap at this zoom. */
+  function kerbHeads(cx: number, cy: number, ux: number, uy: number, px: number, py: number, side: number, hs: {u: number; lamps: string[]}[]): void {
+    const gap = 5.6 / sc, k = side * (LW + 2.6);
+    let last = -Infinity;
+    for (const h of hs.sort((p, q) => p.u - q.u)) {
+      const u = Math.max(h.u, last + gap); last = u;
+      head(cx + ux * u + px * k, cy + uy * u + py * k, px * side, py * side, h.lamps);
+    }
   }
 
   function draw(): void {
@@ -64,34 +93,46 @@ export function start(): void {
       ctx.lineWidth = 0.35; ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.moveTo(rb.x + a.ux * (RR + 12), rb.y + a.uy * (RR + 12));
       const far = a.link < 0 ? fd + PAD : (Math.abs(sim.rbs[a.link].x - rb.x) / 2);
       ctx.lineTo(rb.x + a.ux * far, rb.y + a.uy * far); ctx.stroke(); ctx.setLineDash([]);
+      // Stop lines where the sim holds traffic: entry lane 10 m before the ring, ring lane at `sStop`, and both
+      // sides of the pedestrian crossing (`xw` from the ring centreline; link arms have none).
+      const r0 = RR * Math.cos(K.DEL), su = r0 + K.ZD, xc = r0 + a.xw, th = -a.sStop / RR, cs = Math.cos(th), sn = Math.sin(th);
+      const P = (u: number, k: number): [number, number] => [rb.x + a.ux * u + a.px * k, rb.y + a.uy * u + a.py * k];
+      const line = (u: number, k0: number, k1: number) => { ctx.beginPath(); ctx.moveTo(...P(u, k0)); ctx.lineTo(...P(u, k1)); ctx.stroke(); };
       ctx.lineWidth = 0.9;
-      for (let k = -4.4; k <= 4.5; k += 2.2) {
-        ctx.beginPath(); ctx.moveTo(rb.x + a.ux * (RR + 6) + a.px * k, rb.y + a.uy * (RR + 6) + a.py * k);
-        ctx.lineTo(rb.x + a.ux * (RR + 9) + a.px * k, rb.y + a.uy * (RR + 9) + a.py * k); ctx.stroke();
-      }
-      const ix = rb.x + a.ux * (RR + 10.5) + a.px * (2 * LW + 3.2), iy = rb.y + a.uy * (RR + 10.5) + a.py * (2 * LW + 3.2);
+      if (a.xw) for (let k = -4.4; k <= 4.5; k += 2.2) { ctx.beginPath(); ctx.moveTo(...P(xc - 1.5, k)); ctx.lineTo(...P(xc + 1.5, k)); ctx.stroke(); }
+      // Signals: solid stop lines. Give-way: dashed give-way line at the entry, crossing unsignalised.
+      ctx.lineWidth = 0.8; ctx.setLineDash(a.sg ? [] : [1, 0.9]); line(su, 0.3, 2 * LW - 0.6); ctx.setLineDash([]);
       if (a.sg) {
-        dot(ix, iy, 1.8, a.sg.entry === 'g' ? col.go : a.sg.entry === 'a' ? col.slow : col.stop);
-        dot(rb.x + a.ux * (RR + 5) - a.px * (2 * LW + 3.2), rb.y + a.uy * (RR + 5) - a.py * (2 * LW + 3.2), 1.5, a.sg.ped ? col.stop : col.go);
-        const th = -a.sStop / RR;
-        dot(rb.x + (RR - 7) * Math.cos(th), rb.y + (RR - 7) * Math.sin(th), 1.5, a.sg.ring ? col.stop : col.go);
-      } else if (blink) dot(ix, iy, 1.8, col.slow);
+        ctx.beginPath(); ctx.moveTo(rb.x + (RR - 3.6) * cs, rb.y + (RR - 3.6) * sn); ctx.lineTo(rb.x + (RR + 3.6) * cs, rb.y + (RR + 3.6) * sn); ctx.stroke();
+        if (a.xw) { line(xc + 2.5, 0.3, 2 * LW - 0.6); line(xc - 2.5, -0.3, -(2 * LW - 0.6)); }
+      }
+      // Signal heads where they stand: ring head on the central island at the ring stop line; on the kerbs the entry
+      // head at its stop line and the crossing's vehicle and pedestrian heads. Give-way: vehicle heads flash amber.
+      const amb = !a.sg && blink, e = a.sg ? a.sg.entry : '', ring = a.sg ? (a.sg.ring ? 'r' : 'g') : '';
+      const ped = !!a.sg && a.sg.ped, car3 = (red: boolean, green: boolean) => [red ? col.stop : '', amb ? col.slow : '', green ? col.go : ''];
+      head(rb.x + (RR - 5.5) * cs, rb.y + (RR - 5.5) * sn, -cs, -sn, car3(ring === 'r', ring === 'g'));
+      const pedHead = [a.sg && !ped ? col.stop : '', ped ? col.go : ''];
+      kerbHeads(rb.x, rb.y, a.ux, a.uy, a.px, a.py, 1, [
+        {u: su, lamps: [e === 'r' ? col.stop : '', e === 'a' || amb ? col.slow : '', e === 'g' ? col.go : '']},
+        ...(a.xw ? [{u: xc - 1, lamps: pedHead}, {u: xc + 3, lamps: car3(ped, !!a.sg && !ped)}] : [])]);
+      if (a.xw) kerbHeads(rb.x, rb.y, a.ux, a.uy, a.px, a.py, -1, [{u: xc - 3, lamps: car3(ped, !!a.sg && !ped)}, {u: xc + 1, lamps: pedHead}]);
       for (const p of a.peds) {
         const f = (sim.t - p.t0) / 6.5; if (f < 0 || f > 1) continue;
-        const k = (p.dir > 0 ? f : 1 - f) * 18 - 9;
-        dot(rb.x + a.ux * (RR + 7.5) + a.px * k, rb.y + a.uy * (RR + 7.5) + a.py * k, 1.1, col.ped);
+        dot(...P(xc, (p.dir > 0 ? f : 1 - f) * 18 - 9), 1.1, col.ped);
       }
-      if (a.pedWait > 0) dot(rb.x + a.ux * (RR + 7.5) + a.px * 10.5, rb.y + a.uy * (RR + 7.5) + a.py * 10.5, 1.1, col.ped);
+      if (a.pedWait > 0) dot(...P(xc, 10.5), 1.1, col.ped);
     }
     const vw = Math.max(2.3, 2.2 / sc);
     const vc = (v: Vehicle) => v.bus ? col.bus : v.v < 0.5 ? col.stop : v.v < 4 ? col.slow : col.car;
     for (const l of sim.lanes) {
-      // Positions scale by drawn/real length, so links longer than drawn (Șaguna, Piața Unirii) appear compressed.
-      const dx = (l.bx - l.ax) / l.L, dy = (l.by - l.ay) / l.L;
+      // Links longer than drawn (Șaguna, Piața Unirii) are compressed in the middle only: the last END metres at
+      // each end keep true scale, so queues sit at the drawn stop line and exit crossing.
+      const Ld = Math.hypot(l.bx - l.ax, l.by - l.ay), ux = (l.bx - l.ax) / Ld, uy = (l.by - l.ay) / Ld, END = 20;
+      const map = (p: number) => l.L <= Ld + 0.01 ? p : p < END ? p : p > l.L - END ? Ld - (l.L - p) : END + (p - END) * (Ld - 2 * END) / (l.L - 2 * END);
       for (const v of l.veh) {
         ctx.strokeStyle = vc(v); ctx.lineWidth = v.bus ? vw + 0.5 : vw;
-        const r = Math.max(0, v.pos - v.len);
-        ctx.beginPath(); ctx.moveTo(l.ax + dx * v.pos, l.ay + dy * v.pos); ctx.lineTo(l.ax + dx * r, l.ay + dy * r); ctx.stroke();
+        const f = map(v.pos), r = map(Math.max(0, v.pos - v.len));
+        ctx.beginPath(); ctx.moveTo(l.ax + ux * f, l.ay + uy * f); ctx.lineTo(l.ax + ux * r, l.ay + uy * r); ctx.stroke();
         if (v.pos < v.len && l.fromArm) {
           // Tail still in the ring: draw it along the ring arc.
           const a = l.fromArm, s1 = a.sExit, s0 = s1 - (v.len - v.pos);
@@ -112,8 +153,18 @@ export function start(): void {
         // Links run one direction per side: eastbound labelled below the road, westbound above.
         if (a.link >= 0) { txt(a.name + (a.len ? ` · ${a.len} m` : ''), rb.x + (sim.rbs[a.link].x - rb.x) / 2, rb.y + (a.link > rb.idx ? 17 : -11), 'center', col.muted, f1); continue; }
         if (Math.abs(a.ux) > 0.7) {
-          const x = rb.x + a.ux * (RR + K.ARM * 0.62), y = rb.y + a.uy * (RR + K.ARM * 0.62);
-          txt(a.name, x, y - 11, 'center', col.muted, f1); if (n) txt('+' + n, x, y + 17, 'center', col.stop, f2);
+          // Near-horizontal arms: label along the road, centred in the longest stretch clear of signal heads.
+          ctx.font = f1; const half = ctx.measureText(a.name).width / sc / 2 + 3, r0 = RR * Math.cos(K.DEL);
+          const busy = [[0, r0 + K.ZD + 14], ...(a.xw ? [[r0 + a.xw - 9, r0 + a.xw + 9]] : []), [r0 + K.ARM - 4, Infinity]].sort((p, q) => p[0] - q[0]);
+          let u = RR + K.ARM * 0.62, best = -1;
+          for (let i = 1; i < busy.length; i++) {
+            const lo = busy[i - 1][1], hi = busy[i][0];
+            if (hi - lo > best) { best = hi - lo; u = Math.max(lo + half, (lo + hi) / 2); }
+          }
+          // No stretch long enough: set the label out beyond the heads on the kerb.
+          const off = (LW + 3) * sc + (best < 2 * half ? 13 : 0);
+          roadTxt(a.name, rb.x + a.ux * u, rb.y + a.uy * u, a.ang, col.muted, f1, -off);
+          if (n) roadTxt('+' + n, rb.x + a.ux * u, rb.y + a.uy * u, a.ang, col.stop, f2, off);
         } else {
           const x = rb.x + a.ux * (RR + K.ARM * 0.72) + 10, y = rb.y + a.uy * (RR + K.ARM * 0.72);
           txt(a.name, x, y, 'left', col.muted, f1); if (n) txt('+' + n, x, y, 'left', col.stop, f2, 15);

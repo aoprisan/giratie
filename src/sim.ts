@@ -46,7 +46,8 @@ export interface Vehicle {
 export interface Stop {
   pos: number;
   arm: Arm;
-  side: 'in' | 'out';
+  /** `in`: entry stop line. `cross`: inbound side of the pedestrian crossing. `out`: outbound side of the crossing. */
+  side: 'in' | 'cross' | 'out';
 }
 
 export interface Lane {
@@ -87,6 +88,8 @@ export interface Arm {
   /** Signals: the exit crossing's pedestrian window is open until this time (adaptive control). */
   pedOpen: number;
   len: number;
+  /** Signalised pedestrian crossing, centre in metres from the ring centreline; 0 = none (link arms). */
+  xw: number;
   peds: Ped[];
   backlog: Pending[];
   sg: Signal | null;
@@ -94,6 +97,7 @@ export interface Arm {
   outLane: Lane;
   inStop: Stop;
   outStop: Stop;
+  crossStop: Stop | null;
   w: number;
   f0: number;
   fd: number;
@@ -173,6 +177,7 @@ interface ArmDef {
   g?: number;
   link?: number;
   len?: number;
+  xw?: number;
 }
 
 interface RbDef {
@@ -192,16 +197,19 @@ interface RbDef {
 // milea: V. Milea 35, Dumbrăvii 99, link 240, Noica 280 (rotated -60).
 // `len` is the ring-to-ring route length in the direction leaving the arm. Str. Andrei Șaguna is one-way westbound;
 // eastbound traffic runs Alba Iulia → Str. Dealului → Str. Banatului → Bd. Victoriei.
+// `xw`: signalised pedestrian crossing, metres from the ring centreline. Ramada and Milea from the city's Vissim model
+// ("Fluxuri simultane", sibiu100.ro, 6 Oct 2026; scale from the OSM ring centres); Morilor from OSM crossing nodes
+// 1029549080, 1029549132, 2017149689. The links have no crossing near the rings.
 const defs: RbDef[] = [
   {key: 'morilor', name: 'Alba Iulia · Morilor · Turismului', x: 0, y: 0, nameAt: [150, 48], arms: [
-    {a: 0, link: 1, name: '→ Banatului · Victoriei', len: 874}, {a: 303, name: 'Str. Morilor', flow: 220, g: 1},
-    {a: 146, name: 'Șos. Alba Iulia', flow: 520, g: 0}, {a: 227, name: 'Str. Turismului', flow: 160, g: 1}]},
+    {a: 0, link: 1, name: '→ Banatului · Victoriei', len: 874}, {a: 303, name: 'Str. Morilor', flow: 220, g: 1, xw: 17},
+    {a: 146, name: 'Șos. Alba Iulia', flow: 520, g: 0, xw: 26}, {a: 227, name: 'Str. Turismului', flow: 160, g: 1, xw: 15}]},
   {key: 'ramada', name: 'Piața Unirii · Ramada', x: 280, y: 0, arms: [
-    {a: 0, link: 2, name: '→ Piața Unirii', len: 195}, {a: 258, name: 'Bd. C. Coposu', flow: 280, g: 1},
-    {a: 180, link: 0, name: '← Str. Andrei Șaguna', len: 686}, {a: 88, name: 'Str. Emil Cioran', flow: 300, g: 1}]},
+    {a: 0, link: 2, name: '→ Piața Unirii', len: 195}, {a: 258, name: 'Bd. C. Coposu', flow: 280, g: 1, xw: 45},
+    {a: 180, link: 0, name: '← Str. Andrei Șaguna', len: 686}, {a: 88, name: 'Str. Emil Cioran', flow: 300, g: 1, xw: 16}]},
   {key: 'milea', name: 'V. Milea · Dumbrăvii (blocul-plombă)', x: 500, y: 0, nameAt: [-21, 48], arms: [
-    {a: 335, name: 'Bd. Vasile Milea', flow: 470, g: 0}, {a: 220, name: 'Str. C. Noica', flow: 120, g: 1},
-    {a: 180, link: 1, name: '← Piața Unirii', len: 195}, {a: 39, name: 'Calea Dumbrăvii', flow: 420, g: 1}]},
+    {a: 335, name: 'Bd. Vasile Milea', flow: 470, g: 0, xw: 70}, {a: 220, name: 'Str. C. Noica', flow: 120, g: 1, xw: 12},
+    {a: 180, link: 1, name: '← Piața Unirii', len: 195}, {a: 39, name: 'Calea Dumbrăvii', flow: 420, g: 1, xw: 43}]},
 ];
 
 /** Mulberry32: small seedable PRNG returning floats in [0, 1). */
@@ -231,7 +239,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
       rb.arms.push({rb, idx: k, ang, ux, uy, px: uy, py: -ux, name: d.name ?? null, flow: d.flow ?? 0, g: d.g ?? 0, link: d.link ?? -1,
         sEntry, sExit: mod(-(ang + DEL) * RR, C), sStop: mod(sEntry - 6, C),
         ex: rb.x + RR * Math.cos(ang - DEL), ey: rb.y + RR * Math.sin(ang - DEL), xx: rb.x + RR * Math.cos(ang + DEL), xy: rb.y + RR * Math.sin(ang + DEL),
-        pedUntil: -1, pedWait: 0, pedOpen: -1, len: d.len ?? 0, peds: [], backlog: [], sg: null, w: 0, f0: 0, fd: 0} as unknown as Arm);
+        pedUntil: -1, pedWait: 0, pedOpen: -1, len: d.len ?? 0, xw: d.link === undefined ? d.xw ?? 0 : 0, peds: [], backlog: [], sg: null, w: 0, f0: 0, fd: 0} as unknown as Arm);
     });
     rb.arms.forEach(a => { if (a.link > rb.idx) rb.east = a; if (a.link >= 0 && a.link < rb.idx) rb.west = a; });
   });
@@ -257,7 +265,10 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
   arms.forEach(a => {
     a.inLane.endArm = a; a.outLane.fromArm = a;
     a.inStop = {pos: a.inLane.L - ZD, arm: a, side: 'in'}; a.inLane.stops.push(a.inStop);
-    a.outStop = {pos: 5.5, arm: a, side: 'out'}; a.outLane.stops.push(a.outStop);
+    // Crossing 4 m wide centred `xw` from the ring: exits hold just before it, arrivals just upstream of it.
+    a.outStop = {pos: Math.max(0.5, a.xw - 2.5), arm: a, side: 'out'}; a.outLane.stops.push(a.outStop);
+    a.crossStop = a.xw ? {pos: a.inLane.L - (a.xw + 2.5), arm: a, side: 'cross'} : null;
+    if (a.crossStop) a.inLane.stops.push(a.crossStop);
   });
   const sinks = arms.filter(a => a.link < 0);
   rbs.forEach(rb => {
@@ -275,9 +286,11 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     if (P.plan === 'seq') return Math.max(GMIN, rb.arms[gi].fd * P.cycle - CLR);
     return Math.max(GMIN, P.cycle * (gi ? 0.45 : 0.55) - CLR);
   }
+  /** Any vehicle within `d` of the end of `a`'s approach? `bus`: only a moving bus counts as a priority call; a bus
+   *  standing in a queue it cannot clear would otherwise call its green forever and starve the other groups. */
   function near(a: Arm, d: number, bus = false): boolean {
     const l = a.inLane;
-    for (const v of l.veh) if (l.L - v.pos < d && (!bus || v.bus)) return true;
+    for (const v of l.veh) if (l.L - v.pos < d && (!bus || (v.bus && v.v > 1))) return true;
     return false;
   }
   function control(rb: Roundabout): void {
@@ -327,8 +340,9 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
   }
   function stopBlocked(st: Stop): boolean {
     const a = st.arm, s = a.sg;
-    if (s) return st.side === 'in' ? s.entry !== 'g' : s.ped;
-    return t < a.pedUntil;
+    if (st.side === 'in') return !!s && s.entry !== 'g';
+    if (!a.xw) return false;
+    return s ? s.ped : t < a.pedUntil;
   }
   function pickDest(a: Arm): Arm {
     let tot = 0; for (const s of sinks) if (s !== a) tot += s.flow;
@@ -380,7 +394,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     for (const rb of rbs) control(rb);
     for (const a of arms) {
       a.sg = sig(a);
-      if (rng() < P.ped / 3600 * DT) {
+      if (a.xw && rng() < P.ped / 3600 * DT) {
         if (a.sg) a.pedWait++;
         else { a.pedUntil = t + 6.5; a.peds.push({t0: t, dir: rng() < .5 ? 1 : -1}); }
       }
