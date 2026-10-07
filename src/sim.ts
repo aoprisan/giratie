@@ -74,6 +74,7 @@ export interface Arm {
   py: number;
   name: string | null;
   flow: number;
+  out: number;
   g: number;
   link: number;
   sEntry: number;
@@ -174,6 +175,7 @@ interface ArmDef {
   a: number;
   name?: string;
   flow?: number;
+  out?: number;
   g?: number;
   link?: number;
   len?: number;
@@ -190,26 +192,26 @@ interface RbDef {
 }
 
 // Arms are listed in the order the city named them on 2 Oct 2026. Screen angles: 0 = east, 90 = south.
-// Geometry from OpenStreetMap (7 Oct 2026, ring ways 191137276, 190921167, 190919313). Each roundabout is rotated
+// Geometry from OpenStreetMap (7 Oct 2026, ring ways 190921167, 190919313). Each roundabout is rotated
 // as a whole so its links lie on the drawn corridor, which keeps the real angular spacing of its arms.
-// Real bearings (screen angles, unrotated): morilor: Alba Iulia 129, Turismului 210, Morilor 286, link 343 (rotated +17);
-// ramada: link to milea 61, Cioran 145, link to morilor 233, Coposu 315 (rotated -57, links forced to 0/180);
-// milea: V. Milea 35, Dumbrăvii 99, link 240, Noica 280 (rotated -60).
-// `len` is the ring-to-ring route length in the direction leaving the arm. Str. Andrei Șaguna is one-way westbound;
-// eastbound traffic runs Alba Iulia → Str. Dealului → Str. Banatului → Bd. Victoriei.
-// `xw`: signalised pedestrian crossing, metres from the ring centreline. Ramada and Milea from the city's Vissim model
-// ("Fluxuri simultane", sibiu100.ro, 6 Oct 2026; scale from the OSM ring centres); Morilor from OSM crossing nodes
-// 1029549080, 1029549132, 2017149689. The links have no crossing near the rings.
+// Real bearings (screen angles, unrotated): ramada: link to milea 61, Cioran 145, Șaguna 233, Coposu 315 (rotated -57,
+// link and Șaguna forced to 0/180); milea: V. Milea 35, Dumbrăvii 99, link 240, Noica 280 (rotated -60).
+// Only the two roundabouts in the city's Vissim model are simulated. Str. Andrei Șaguna is one-way westbound, so at
+// Ramada it is an exit only (`flow` 0); `out` weights it as a destination (the old Morilor arms' 900 veh/h combined).
+// `len` is the ring-to-ring route length in the direction leaving the arm.
+// `xw`: signalised pedestrian crossing, metres from the ring centreline, from the city's Vissim model
+// ("Fluxuri simultane", sibiu100.ro, 6 Oct 2026; scale from the OSM ring centres). The link has no crossing near the rings.
 const defs: RbDef[] = [
-  {key: 'morilor', name: 'Alba Iulia · Morilor · Turismului', x: 0, y: 0, nameAt: [150, 48], arms: [
-    {a: 0, link: 1, name: '→ Banatului · Victoriei', len: 874}, {a: 303, name: 'Str. Morilor', flow: 220, g: 1, xw: 17},
-    {a: 146, name: 'Șos. Alba Iulia', flow: 520, g: 0, xw: 26}, {a: 227, name: 'Str. Turismului', flow: 160, g: 1, xw: 15}]},
-  {key: 'ramada', name: 'Piața Unirii · Ramada', x: 280, y: 0, arms: [
-    {a: 0, link: 2, name: '→ Piața Unirii', len: 195}, {a: 258, name: 'Bd. C. Coposu', flow: 280, g: 1, xw: 45},
-    {a: 180, link: 0, name: '← Str. Andrei Șaguna', len: 686}, {a: 88, name: 'Str. Emil Cioran', flow: 300, g: 1, xw: 16}]},
-  {key: 'milea', name: 'V. Milea · Dumbrăvii (blocul-plombă)', x: 500, y: 0, nameAt: [-21, 48], arms: [
+  // Șos. Alba Iulia × Str. Morilor × Str. Turismului: named by the city but not in its Vissim model, so left out.
+  // {key: 'morilor', name: 'Alba Iulia · Morilor · Turismului', x: 0, y: 0, nameAt: [150, 48], arms: [
+  //   {a: 0, link: 1, name: '→ Banatului · Victoriei', len: 874}, {a: 303, name: 'Str. Morilor', flow: 220, g: 1, xw: 17},
+  //   {a: 146, name: 'Șos. Alba Iulia', flow: 520, g: 0, xw: 26}, {a: 227, name: 'Str. Turismului', flow: 160, g: 1, xw: 15}]},
+  {key: 'ramada', name: 'Piața Unirii · Ramada', x: 0, y: 0, arms: [
+    {a: 0, link: 1, name: '→ Piața Unirii', len: 195}, {a: 258, name: 'Bd. C. Coposu', flow: 280, g: 1, xw: 45},
+    {a: 180, name: 'Str. Andrei Șaguna', flow: 0, out: 900, g: 0}, {a: 88, name: 'Str. Emil Cioran', flow: 300, g: 1, xw: 16}]},
+  {key: 'milea', name: 'V. Milea · Dumbrăvii (blocul-plombă)', x: 220, y: 0, nameAt: [-21, 48], arms: [
     {a: 335, name: 'Bd. Vasile Milea', flow: 470, g: 0, xw: 70}, {a: 220, name: 'Str. C. Noica', flow: 120, g: 1, xw: 12},
-    {a: 180, link: 1, name: '← Piața Unirii', len: 195}, {a: 39, name: 'Calea Dumbrăvii', flow: 420, g: 1, xw: 43}]},
+    {a: 180, link: 0, name: '← Piața Unirii', len: 195}, {a: 39, name: 'Calea Dumbrăvii', flow: 420, g: 1, xw: 43}]},
 ];
 
 /** Mulberry32: small seedable PRNG returning floats in [0, 1). */
@@ -236,7 +238,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
       const ang = d.a * Math.PI / 180, ux = Math.cos(ang), uy = Math.sin(ang);
       const sEntry = mod(-(ang - DEL) * RR, C);
       // Lanes, stops and phase weights are filled in below.
-      rb.arms.push({rb, idx: k, ang, ux, uy, px: uy, py: -ux, name: d.name ?? null, flow: d.flow ?? 0, g: d.g ?? 0, link: d.link ?? -1,
+      rb.arms.push({rb, idx: k, ang, ux, uy, px: uy, py: -ux, name: d.name ?? null, flow: d.flow ?? 0, out: d.out ?? d.flow ?? 0, g: d.g ?? 0, link: d.link ?? -1,
         sEntry, sExit: mod(-(ang + DEL) * RR, C), sStop: mod(sEntry - 6, C),
         ex: rb.x + RR * Math.cos(ang - DEL), ey: rb.y + RR * Math.sin(ang - DEL), xx: rb.x + RR * Math.cos(ang + DEL), xy: rb.y + RR * Math.sin(ang + DEL),
         pedUntil: -1, pedWait: 0, pedOpen: -1, len: d.len ?? 0, xw: d.link === undefined ? d.xw ?? 0 : 0, peds: [], backlog: [], sg: null, w: 0, f0: 0, fd: 0} as unknown as Arm);
@@ -345,9 +347,9 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     return s ? s.ped : t < a.pedUntil;
   }
   function pickDest(a: Arm): Arm {
-    let tot = 0; for (const s of sinks) if (s !== a) tot += s.flow;
+    let tot = 0; for (const s of sinks) if (s !== a) tot += s.out;
     let r = rng() * tot;
-    for (const s of sinks) { if (s === a) continue; r -= s.flow; if (r <= 0) return s; }
+    for (const s of sinks) { if (s === a) continue; r -= s.out; if (r <= 0) return s; }
     return sinks[0];
   }
   function exitFor(rb: Roundabout, dest: Arm): Arm {

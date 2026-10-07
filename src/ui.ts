@@ -13,7 +13,7 @@ function $<T extends HTMLElement = HTMLElement>(id: string): T {
 export function start(): void {
   const P: Params = {demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'};
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let sim: Sim, speed = 2, paused = reduce, modes: Mode[] = ['classic', 'classic', 'signal'];
+  let sim: Sim, speed = 2, paused = reduce, modes: Mode[] = ['classic', 'signal'];
   let hist: {t: number; v: number}[] = [], marks: number[] = [], lastHist = 0;
   const WARM = 240, BASE = 9 * 3600 + 56 * 60;
   function build(): void {
@@ -24,7 +24,7 @@ export function start(): void {
   }
   build();
   const K = sim!.K, RR = K.RR, LW = K.LW, PAD = 16;
-  const minX = -(RR + K.ARM + PAD), maxX = 500 + RR + K.ARM + PAD, minY = -(RR + K.ARM + PAD), maxY = RR + K.ARM + PAD;
+  const minX = -(RR + K.ARM + PAD), maxX = Math.max(...sim!.rbs.map(r => r.x)) + RR + K.ARM + PAD, minY = -(RR + K.ARM + PAD), maxY = RR + K.ARM + PAD;
   const cv = $<HTMLCanvasElement>('map'), ctx = cv.getContext('2d')!, sp = $<HTMLCanvasElement>('spark'), sx = sp.getContext('2d')!;
   const col = {} as Record<ColorKey, string>;
   let sc = 1, dpr = 1, W = 0, H = 0;
@@ -210,9 +210,9 @@ export function start(): void {
     $('m' + i + 's').onclick = () => setModes(modes.map((m, j) => j === i ? 'signal' : m));
   });
   const presets: Record<string, Mode[]> = {
-    'sc-before': ['classic', 'classic', 'classic'],
-    'sc-oct6': ['classic', 'classic', 'signal'],
-    'sc-full': ['signal', 'signal', 'signal'],
+    'sc-before': ['classic', 'classic'],
+    'sc-oct6': ['classic', 'signal'],
+    'sc-full': ['signal', 'signal'],
   };
   function setModes(m: Mode[]): void { modes = m; sim.rbs.forEach((r, i) => r.mode = m[i]); marks.push(sim.t); syncUI(); }
   function syncUI(): void {

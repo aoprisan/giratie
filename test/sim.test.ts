@@ -11,13 +11,11 @@ function run(modes: Mode[], seed = 1, steps = 6000, ctrl: Ctrl = 'adaptive') {
 describe('createSim', () => {
   it('builds the corridor network', () => {
     const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'});
-    expect(s.rbs.map(r => r.key)).toEqual(['morilor', 'ramada', 'milea']);
-    expect(s.arms).toHaveLength(12);
-    expect(s.rbs[0].arms.map(a => a.name)).toContain('Str. Turismului');
-    // Links are modelled at their real (OSM) route length, longer than drawn; Șaguna is one-way westbound.
-    expect(s.rbs[1].west!.outLane.L).toBeGreaterThanOrEqual(686);
-    expect(s.rbs[0].east!.outLane.L).toBeGreaterThanOrEqual(874);
-    expect(s.rbs[2].west!.outLane.L).toBeGreaterThanOrEqual(195);
+    expect(s.rbs.map(r => r.key)).toEqual(['ramada', 'milea']);
+    expect(s.arms).toHaveLength(8);
+    // The link is modelled at its real (OSM) route length, longer than drawn; Șaguna is one-way westbound (exit only).
+    expect(s.rbs[1].west!.outLane.L).toBeGreaterThanOrEqual(195);
+    expect(s.rbs[0].arms.find(a => a.name === 'Str. Andrei Șaguna')!.flow).toBe(0);
     for (const a of s.arms) {
       expect(a.inLane.endArm).toBe(a);
       expect(a.outLane.fromArm).toBe(a);
@@ -25,10 +23,10 @@ describe('createSim', () => {
   });
 
   it('is deterministic for a given seed', () => {
-    expect(run(['classic', 'classic', 'signal'], 7).stats()).toEqual(run(['classic', 'classic', 'signal'], 7).stats());
+    expect(run(['classic', 'signal'], 7).stats()).toEqual(run(['classic', 'signal'], 7).stats());
   });
 
-  for (const modes of [['classic', 'classic', 'classic'], ['signal', 'signal', 'signal']] as Mode[][]) {
+  for (const modes of [['classic', 'classic'], ['signal', 'signal']] as Mode[][]) {
     it(`moves traffic through the corridor (${modes.join(',')})`, () => {
       const st = run(modes).stats();
       expect(st.t).toBeCloseTo(600, 5);
@@ -48,7 +46,7 @@ describe('createSim', () => {
       }
     }
     // Mean over seeds: on a single seed fixed-time can come out ahead.
-    const all: Mode[] = ['signal', 'signal', 'signal'];
+    const all: Mode[] = ['signal', 'signal'];
     const mean = (ctrl: Ctrl) => [1, 2, 3].reduce((m, seed) => m + run(all, seed, 12000, ctrl).stats().trip, 0) / 3;
     expect(mean('adaptive')).toBeLessThan(mean('fixed'));
   });
@@ -58,7 +56,7 @@ describe('createSim', () => {
     const s = createSim({demand: 1, cycle: 100, ped: 120, plan: 'seq', ctrl: 'adaptive'}, mulberry32(3));
     s.rbs.forEach(r => r.mode = 'signal');
     for (let i = 0; i < 12000; i++) s.step();
-    const [, ramada, milea] = s.rbs;
+    const [ramada, milea] = s.rbs;
     const locked = [ramada, milea].every(rb => rb.veh.length > 0 && rb.veh.every(v => v.v < 0.1)) &&
       [ramada.east!, milea.west!].every(a => a.outLane.veh.every(v => v.v < 0.1));
     expect(locked).toBe(false);
@@ -66,7 +64,7 @@ describe('createSim', () => {
   });
 
   it('never overlaps vehicles in a ring', () => {
-    const s = run(['signal', 'signal', 'signal'], 3, 3000);
+    const s = run(['signal', 'signal'], 3, 3000);
     const C = s.K.C;
     for (const rb of s.rbs) {
       const v = [...rb.veh].sort((a, b) => a.s - b.s);
