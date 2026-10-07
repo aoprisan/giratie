@@ -58,6 +58,7 @@ select{font:500 14px var(--body);padding:7px 8px;border-radius:6px;border:1px so
 .tile{background:var(--surface);padding:12px 14px}
 .tile b{display:block;font-family:var(--display);font-weight:700;font-size:30px;line-height:1.1;font-variant-numeric:tabular-nums}
 .tile span{font-size:13px;color:var(--muted)}
+.tile b.g-good{color:var(--go)}.tile b.g-mid{color:var(--slow)}.tile b.g-bad{color:var(--stop)}
 #spark{display:block;width:100%;height:110px}
 .cap{font-size:13px;color:var(--muted);margin:0}
 .notes{max-width:70ch;display:flex;flex-direction:column;gap:8px}

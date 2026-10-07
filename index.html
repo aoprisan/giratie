@@ -76,6 +76,8 @@
   <div class="panel">
     <h2>Whole corridor</h2>
     <div class="tiles">
+      <div class="tile"><b id="t-score">–</b><span>traffic score out of 100, grade A–F</span></div>
+      <div class="tile"><b id="t-wait">–</b><span>average wait per trip, last 5 min</span></div>
       <div class="tile"><b id="t-trip">–</b><span>average trip, last 5 min</span></div>
       <div class="tile"><b id="t-flow">–</b><span>vehicles getting through per hour</span></div>
       <div class="tile"><b id="t-stop">–</b><span>stopped on the map now</span></div>
@@ -83,6 +85,7 @@
     </div>
     <canvas id="spark" aria-label="Vehicles stopped or queued over the last 20 simulated minutes"></canvas>
     <p class="cap">Vehicles stopped or queued, last 20 simulated minutes. Dashed lines mark a change of scenario or control.</p>
+    <p class="cap">Wait counts the time a vehicle spends queued beyond the map or below walking pace on it. The score is the share of arriving traffic that gets through, times 30 / (30 + average wait in seconds): 100 means nobody waits and nothing piles up, a 30 s wait halves it. The grade uses the level-of-service bands for roundabout delay: A up to 10 s, B 15, C 25, D 35, E 50, F beyond.</p>
   </div>
 </div>
 

@@ -237,6 +237,10 @@ export function start(): void {
   function readouts(): void {
     const s = sim.stats(), T = Math.floor(BASE + s.t);
     $('clock').textContent = p2(Math.floor(T / 3600) % 24) + ':' + p2(Math.floor(T / 60) % 60) + ':' + p2(T % 60);
+    const sc = $('t-score');
+    sc.textContent = s.score === null ? '–' : s.score + ' · ' + s.grade;
+    sc.className = s.score === null ? '' : 'AB'.includes(s.grade) ? 'g-good' : 'CD'.includes(s.grade) ? 'g-mid' : 'g-bad';
+    $('t-wait').textContent = s.score === null ? '–' : s.wait < 60 ? Math.round(s.wait) + ' s' : Math.floor(s.wait / 60) + ':' + p2(Math.round(s.wait % 60));
     $('t-trip').textContent = s.trip ? Math.floor(s.trip / 60) + ':' + p2(Math.round(s.trip % 60)) : '–';
     $('t-flow').textContent = String(Math.round(s.flow / 10) * 10);
     $('t-stop').textContent = String(s.stopped); $('t-back').textContent = String(s.backlog);
