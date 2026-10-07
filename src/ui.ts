@@ -105,14 +105,15 @@ export function start(): void {
     }
     const f1 = '500 12px Barlow, sans-serif', f2 = '600 13px "Barlow Condensed", sans-serif';
     for (const rb of sim.rbs) {
-      txt(rb.name.toUpperCase(), rb.x - RR * 0.8, rb.y - RR - 9, 'right', col.ink, f2);
+      txt(rb.name.toUpperCase(), rb.x + rb.nameAt[0], rb.y + rb.nameAt[1], 'right', col.ink, f2);
       for (const a of rb.arms) {
         if (!a.name) continue;
         const n = a.backlog.length;
-        if (a.link >= 0) { txt(a.name + (a.len ? ` · ~${a.len} m` : ''), rb.x + (sim.rbs[a.link].x - rb.x) / 2, rb.y + 17, 'center', col.muted, f1); continue; }
+        // Links run one direction per side: eastbound labelled below the road, westbound above.
+        if (a.link >= 0) { txt(a.name + (a.len ? ` · ${a.len} m` : ''), rb.x + (sim.rbs[a.link].x - rb.x) / 2, rb.y + (a.link > rb.idx ? 17 : -11), 'center', col.muted, f1); continue; }
         if (Math.abs(a.ux) > 0.7) {
-          const x = rb.x + a.ux * (RR + K.ARM * 0.62);
-          txt(a.name, x, rb.y - 11, 'center', col.muted, f1); if (n) txt('+' + n, x, rb.y + 17, 'center', col.stop, f2);
+          const x = rb.x + a.ux * (RR + K.ARM * 0.62), y = rb.y + a.uy * (RR + K.ARM * 0.62);
+          txt(a.name, x, y - 11, 'center', col.muted, f1); if (n) txt('+' + n, x, y + 17, 'center', col.stop, f2);
         } else {
           const x = rb.x + a.ux * (RR + K.ARM * 0.72) + 10, y = rb.y + a.uy * (RR + K.ARM * 0.72);
           txt(a.name, x, y, 'left', col.muted, f1); if (n) txt('+' + n, x, y, 'left', col.stop, f2, 15);
