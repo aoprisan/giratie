@@ -110,6 +110,22 @@ describe('createSim', () => {
     expect(s.stats().flow).toBeGreaterThan(800);
   });
 
+  it('without lane markings, sends drivers into either lane and still never locks a ring for good', () => {
+    // No lane line: drivers stagger behind moving cars in the other ring lane. They used to stagger behind stopped ones
+    // too, and a full ring then locked in one circle of cars each waiting for the next (fixed-time, both rings, ~30 min).
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'fixed', agg: 0.5, marked: false}, mulberry32(1));
+    s.rbs.forEach(r => r.mode = 'signal');
+    let wrong = 0, frozen = 0;
+    for (let i = 0; i < 24000; i++) {
+      s.step();
+      for (const rb of s.rbs) for (const v of rb.veh) if (v.rw >= 0 || v.both > s.t) wrong++;
+      if (i % 600 === 0) frozen = s.rbs.every(rb => rb.veh.length > 8 && rb.veh.every(v => v.v < 0.1)) ? frozen + 1 : 0;
+      expect(frozen).toBeLessThan(5);
+    }
+    expect(wrong).toBeGreaterThan(0);
+    expect(s.stats().flow).toBeGreaterThan(600);
+  });
+
   it('is deterministic for a given seed', () => {
     expect(run(['classic', 'signal'], 7).stats()).toEqual(run(['classic', 'signal'], 7).stats());
   });

@@ -19,6 +19,9 @@ export interface Params {
   err?: number;
   /** Share of those (0–1) who force their way instead: they notice only in the ring and cut across it, blocking both lanes. */
   agg?: number;
+  /** Lane markings painted (default). `false`: none, as on the roads on 6 Oct: drivers take either approach lane, do not
+   *  change before the ring, sort out their ring lane inside it, and do not drive side by side on the ring. */
+  marked?: boolean;
 }
 
 export interface Signal {
@@ -38,6 +41,8 @@ export interface Pending {
   bus: boolean;
   err: boolean;
   agg: boolean;
+  /** Approach lane taken when there are no markings. */
+  side: number;
 }
 
 export interface Vehicle {
@@ -554,7 +559,8 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     }
     for (const o of rb.veh) {
       const ri = o.both > t ? k : o.ri;
-      if (ri !== k && !(k === 1 && ri === 0)) continue;
+      // The inner lane crosses the outer one; with no lane line, entrants from either lane give way to both.
+      if (ri !== k && !(k === 1 && ri === 0) && marked) continue;
       const d = mod(o.s - a.sEntry, C);
       if (ri === k ? d - o.len < 2.5 : d - o.len < 0.5) return false;
       const du = C - d;
@@ -583,7 +589,9 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     }
     return true;
   }
-  const ERRD = 30, ERRW = 10, XT = 3;
+  const ERRD = 30, ERRW = 10, XT = 3, STAG = 2.5;
+  /** Lane markings painted? Read from `P` each step, so it can be switched while running. */
+  let marked = true;
   // Intelligent Driver Model.
   const AM = 1.8, BM = 2.5, TH = 1.1, SQ = 2 * Math.sqrt(AM * BM);
   function term(v: number, gap: number, dv: number, s0: number): number {
@@ -598,7 +606,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
   }
 
   function step(): void {
-    t += DT; n++;
+    t += DT; n++; marked = P.marked !== false;
     for (const rb of rbs) control(rb);
     for (const a of arms) a.sg = sig(a);
     for (const x of crossings) {
@@ -615,15 +623,16 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     }
     for (const a of arms) {
       if (a.link < 0 && a.flow) {
-        if (rng() < a.flow * P.demand / 3600 * DT) { const dest = pickDest(a); a.backlog.push({t, dest, bus: rng() < 0.035, err: rng() < (P.err ?? 0), agg: rng() < (P.agg ?? 0)}); }
+        if (rng() < a.flow * P.demand / 3600 * DT) { const dest = pickDest(a); a.backlog.push({t, dest, bus: rng() < 0.035, err: rng() < (P.err ?? 0), agg: rng() < (P.agg ?? 0), side: rng() < 0.5 ? 1 : 0}); }
         if (a.backlog.length) {
           // Straight on: the lane with fewer vehicles. A share `P.err` of drivers who need one lane take the other.
-          const b = a.backlog[0], w = want(b.dest, a.inLane), wrong = b.err && w >= 0 && !!a.inLane.sib;
-          const l = a.inL[w >= 0 ? (wrong ? 1 - w : w) : a.inL[1].veh.length < a.inL[0].veh.length ? 1 : 0], tl = l.veh[l.veh.length - 1];
+          // No markings: either lane, and no lane change before the ring.
+          const b = a.backlog[0], w = want(b.dest, a.inLane), wrong = b.err && w >= 0 && !!a.inLane.sib, bare = !marked && !!a.inLane.sib;
+          const l = a.inL[bare ? b.side : w >= 0 ? (wrong ? 1 - w : w) : a.inL[1].veh.length < a.inL[0].veh.length ? 1 : 0], tl = l.veh[l.veh.length - 1];
           if (!tl || tl.pos - tl.len > 7) {
             a.backlog.shift();
             l.veh.push({pos: 0, v: tl ? Math.min(11, tl.v + 2) : 11, len: b.bus ? 17 : 4.5, bus: b.bus, t0: b.t, dest: b.dest, lane: l, rb: null, s: 0, exit: null, step: n,
-              ri: 0, err: wrong ? (b.agg ? 2 : 1) : 0, wait: -1, rw: -1, hs: 0, agg: b.agg, both: -1});
+              ri: 0, err: bare ? 2 : wrong ? (b.agg ? 2 : 1) : 0, wait: -1, rw: -1, hs: 0, agg: b.agg, both: -1});
           }
         }
       }
@@ -658,7 +667,13 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
           }
         }
         for (const o of rb.veh) {
-          if (o === v || (o.ri !== v.ri && !(o.both > t))) continue;
+          if (o === v) continue;
+          if (o.ri !== v.ri && !(o.both > t)) {
+            // No lane line: drivers stagger behind a moving car in the other lane rather than drive beside it, but pull up
+            // beside one that has stopped (else a full ring locks in one chain of cars each waiting for the next).
+            if (!marked && o.v > 2) { const gap = mod(o.s - v.s, C) - o.len + STAG; if (gap < dEx) inter = Math.max(inter, term(v.v, gap, v.v - o.v, 2)); }
+            continue;
+          }
           const gap = mod(o.s - v.s, C) - o.len;
           if (gap < dEx) { inter = Math.max(inter, term(v.v, gap, v.v - o.v, 2)); hard = Math.min(hard, gap); }
         }
@@ -697,6 +712,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
           rb.veh.splice(rb.veh.indexOf(v), 1); v.rb = null; v.lane = ol; v.pos = ds - dEx; ol.veh.push(v);
           // Onto a link: a share `P.err` of drivers do not change lanes early for the next ring.
           if (rng() < (P.err ?? 0) && ol.endArm && ol.sib) v.err = v.agg ? 2 : 1;
+          if (!marked && ol.endArm && ol.sib) v.err = 2;
         }
         else v.s = mod(v.s + ds, C);
       }
