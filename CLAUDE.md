@@ -33,6 +33,15 @@ both fixed 402 → 406 → 431 s; both adaptive 204 / 2,029 → 296 / 1,749 → 
 Missing markings cost adaptive signals 50–70% on trip time (and ~15% throughput near capacity), fixed-time little (already
 the bottleneck), give-way almost nothing. So they explain much of the 6 Oct trouble, but with markings painted the signals
 are still 2× slower than give-way here (invented flows and timings).
+Readings above were taken with identical drivers (before `P.mix`; now `mix: false`).
+Vehicle mix (`P.mix`, default on; 12 seeds, 30 min, last 5 min; trip s / veh/h, identical → mixed):
+100%: give-way 57 / 1,943 → 57 / 1,894; Milea only fixed 159 → 246 s, adaptive 74 → 81 s; both fixed 366 / 1,354 → 432 / 1,198,
+adaptive 125 / 1,832 → 237 / 1,628. 125%: both adaptive 288 → 417 s, both fixed 556 → 674 s; give-way 58 → 60 s.
+Slow-starting heavy vehicles and longer headways cut the saturation flow at the stop lines, so the mix hurts signals (up to
+~2× on trip time with both adaptive) and leaves give-way alone, where entries use gaps in moving traffic.
+Higher demand (slider up to 300%, mixed): 200%: give-way 207 s / 2,959 veh/h, both adaptive 698 / 1,907, both fixed 993 / 1,123;
+300%: give-way 502 / 2,966, both adaptive 946 / 1,837, both fixed 1,208 / 999. Give-way saturates near 3,000 veh/h, adaptive
+signals near 1,900, fixed-time near 1,200; past that only the backlog grows. No gridlock; ~0.13 ms per step at 300%.
 
 ## Layout
 TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-singlefile`).
@@ -42,8 +51,9 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 - `src/main.ts` – entry point; `src/style.css` – CSS (light/dark tokens on `:root`); `index.html` – markup.
 - `npm run build` – typechecks, then emits `dist/index.html`.
 - `test/sim.test.ts` / `npm test` – vitest: network shape, every signal in the Vissim image, bypasses and mid-block crossings in use, both ring and approach lanes in use without overlaps, lane-choice errors (polite and forcing), no lane markings without gridlock,
-  determinism, throughput sanity, no ring overlap.
-- `scripts/scenarios.ts` / `npm run scenarios [-- seed [err]]` – 20 simulated minutes per scenario, prints trip time, throughput, queues.
+  determinism, throughput sanity, no ring overlap, vehicle mix, 300% demand without gridlock.
+- `scripts/scenarios.ts` / `npm run scenarios [-- seed [err [demand [mix]]]]` – 20 simulated minutes per scenario, prints trip time,
+  throughput, queues (`mix` 0 = identical cars).
 - `.github/workflows/pages.yml` – test + build on every push/PR, deploy `dist/` to GitHub Pages from `main`.
 
 ## Model
@@ -85,8 +95,13 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 - Bypasses (`slip` on an `ArmDef`, `Lane.slip` / `Lane.merge`): Coposu → Șaguna at Ramada, Dumbrăvii → V. Milea at Milea. A vehicle
   whose exit is the bypass target leaves the entry lane at the split (ignoring stops and leaders beyond it) and joins the exit lane when
   `canMerge` finds a gap. The Coposu bypass has an `in` stop held by the Coposu entry light (the Vissim stop bar spans it).
-- Car following: IDM (`AM`, `BM`, `TH`), plus a hard clamp against overlapping the vehicle ahead.
-- Give-way: enter when no ring vehicle is within `4 m + 1.9 s × its speed` upstream (vehicles exiting at this arm ignored).
+- Car following: IDM (`BM` shared; per-vehicle `am`, `th`, desired speed × `vf`), plus a hard clamp against overlapping the vehicle ahead.
+- Vehicle mix (`P.mix`, default on; UI "Vehicles"; `traits()` at arrival, `Vehicle.kind`): 3.5% articulated buses (17 m), 7% vans
+  (6.5 m), 2% lorries (10 m), the rest cars 4.0–5.0 m. Drivers: desired speed × 0.88–1.12 (heavy 0.82–1.06), headway 0.8–1.5 s
+  (+0.2 heavy), acceleration cars 1.5–2.1, vans 1.3–1.6, lorries and buses 0.9–1.1 m/s², give-way gap × 0.8–1.25 (`gf`).
+  `mix: false`: 4.5 m cars, `AM` 1.8, `TH` 1.1 for all (buses too). The six draws always consume `rng`.
+- Demand: `P.demand`, UI slider 40–300%. Arrivals are Bernoulli per step (at most one per arm per 0.1 s; p ≤ 0.4 at 300%).
+- Give-way: enter when no ring vehicle is within `(4 m + 1.9 s × its speed) × gf` upstream (vehicles exiting at this arm ignored).
 - Signals (`sig()`): per arm an entry light and a ring stop line 6 m upstream of the entry (red while the entry is green; vehicles
   leaving at that arm are exempt). Crossings (`Crossing`, `sim.crossings`, zebra ends from the image) hold the carriageways they cross
   (`Stop.side` `cross` inbound, `out` outbound). The arm's near crossing (`arm.xn`) shows red to traffic during its 8 s window after

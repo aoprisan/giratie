@@ -11,7 +11,7 @@ function $<T extends HTMLElement = HTMLElement>(id: string): T {
 }
 
 export function start(): void {
-  const P: Params = {demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0, agg: 0};
+  const P: Params = {demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0, agg: 0, mix: true};
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let sim: Sim, speed = 2, paused = reduce, modes: Mode[] = ['classic', 'signal'];
   let hist: {t: number; v: number}[] = [], marks: number[] = [], lastHist = 0;
@@ -117,10 +117,10 @@ export function start(): void {
       }
       if (x.pedWait > 0) dot(x.ax - ux * 1.6, x.ay - uy * 1.6, 0.8, col.ped);
     }
-    // Vehicles: a body 1.9 m wide (buses 2.5 m) along the lane, or along the ring.
+    // Vehicles: a body along the lane, or along the ring: cars 1.8 m wide, vans 2.0 m, lorries and buses 2.5 m.
     // Drivers in the wrong lane (still sorting it out) stand out in their own colour.
     const vc = (v: Vehicle) => v.err === 1 || v.rw >= 0 || v.both > sim.t ? col.wrong : v.bus ? col.bus : v.v < 0.5 ? col.stop : v.v < 4 ? col.slow : col.car;
-    const vw = (v: Vehicle) => Math.max(v.bus ? 2.5 : 1.9, 2.2 / sc);
+    const vw = (v: Vehicle) => Math.max(v.kind === 'bus' || v.kind === 'lorry' ? 2.5 : v.kind === 'van' ? 2 : 1.8, 2.2 / sc);
     for (const l of sim.lanes) for (const v of l.veh) {
       ctx.strokeStyle = vc(v); ctx.lineWidth = vw(v);
       const f = drawn(l, v.pos), r = drawn(l, Math.max(0, v.pos - v.len));
@@ -225,6 +225,10 @@ export function start(): void {
   const ctrlEl = $<HTMLSelectElement>('ctrl');
   ctrlEl.onchange = () => { P.ctrl = ctrlEl.value as Ctrl; marks.push(sim.t); };
   P.ctrl = ctrlEl.value as Ctrl;
+  // Applies to arrivals from now on; vehicles already on the map keep their class and driver.
+  const mixEl = $<HTMLSelectElement>('mix');
+  mixEl.onchange = () => { P.mix = mixEl.value === 'yes'; marks.push(sim.t); };
+  P.mix = mixEl.value === 'yes';
   const markEl = $<HTMLSelectElement>('marked');
   markEl.onchange = () => { P.marked = markEl.value === 'yes'; marks.push(sim.t); };
   P.marked = markEl.value === 'yes';

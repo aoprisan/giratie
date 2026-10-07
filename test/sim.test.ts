@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {createSim, mulberry32, type Ctrl, type Mode} from '../src/sim';
+import {createSim, mulberry32, type Ctrl, type Mode, type Vehicle} from '../src/sim';
 
 function run(modes: Mode[], seed = 1, steps = 6000, ctrl: Ctrl = 'adaptive') {
   const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl}, mulberry32(seed));
@@ -178,6 +178,41 @@ describe('createSim', () => {
         const gap = (((ahead.s - v[i].s) % C) + C) % C - ahead.len;
         expect(gap).toBeGreaterThan(-0.5);
       }
+    }
+  });
+  it('draws a vehicle mix and differing drivers through rng, without changing demand', () => {
+    const make = (mix: boolean) => {
+      const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', mix}, mulberry32(8));
+      const seen: Vehicle[] = [];
+      for (let i = 0; i < 6000; i++) { s.step(); for (const l of s.lanes) for (const v of l.veh) if (!seen.includes(v)) seen.push(v); }
+      return {s, seen};
+    };
+    const a = make(true), b = make(false);
+    const kinds = new Set(a.seen.map(v => v.kind));
+    for (const k of ['car', 'van', 'lorry', 'bus']) expect(kinds.has(k as Vehicle['kind'])).toBe(true);
+    expect(new Set(a.seen.map(v => v.th)).size).toBeGreaterThan(50);
+    expect(a.seen.filter(v => v.kind !== 'car').every(v => v.am <= 1.6)).toBe(true);
+    // Identical drivers without the mix; same arrivals either way.
+    expect(b.seen.every(v => v.th === b.seen[0].th && v.vf === 1 && (v.bus ? v.len === 17 : v.len === 4.5))).toBe(true);
+    const c = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', mix: true}, mulberry32(8));
+    const d = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', mix: false}, mulberry32(8));
+    // Arrival times per arm over the first 10 s, before any vehicle leaves a ring (that draws from rng too, at times the mix changes).
+    const arrivals = [c, d].map(() => [] as string[]);
+    for (let i = 0; i < 100; i++) [c, d].forEach((s, k) => { s.step(); for (const x of s.arms) for (const t0 of [...x.backlog.map(b => b.t), ...x.inL.flatMap(l => l.veh.map(v => v.t0))]) arrivals[k].push(x.rb.idx + '.' + x.idx + '@' + t0.toFixed(1)); });
+    expect(new Set(arrivals[0])).toEqual(new Set(arrivals[1]));
+    expect(arrivals[0].length).toBeGreaterThan(0);
+  });
+
+  it('keeps moving at three times the demand', () => {
+    for (const modes of [['classic', 'classic'], ['signal', 'signal']] as Mode[][]) {
+      const s = createSim({demand: 3, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'}, mulberry32(9));
+      s.rbs.forEach((r, i) => r.mode = modes[i]);
+      for (let i = 0; i < 12000; i++) s.step();
+      const st = s.stats();
+      // Far more vehicles on the map than at 100%, the rest queued beyond it, and traffic still getting through.
+      expect(st.total).toBeGreaterThan(200);
+      expect(st.backlog).toBeGreaterThan(0);
+      expect(st.flow).toBeGreaterThan(1500);
     }
   });
 });
