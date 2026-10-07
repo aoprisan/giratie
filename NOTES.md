@@ -10,7 +10,11 @@ Branch `claude/sharp-franklin-3jlvv6`. The map and network now follow the city's
 Mean of 6 seeds, 20 min, pair plan, 70 s cycle (trip s / veh/h): all give-way 59 / 1,786; Milea only fixed 356 / 1,026,
 adaptive 142 / 1,424; both fixed 444 / 960, adaptive 202 / 1,598.
 
-Next: two-lane ring and approaches (the image draws them; the sim has one lane), which also brings lane-choice errors.
+Then: two-lane rings and approaches, as the image draws them (details in CLAUDE.md). Mean of 6 seeds, same settings:
+all give-way 55 / 1,728; Milea only fixed 119 / 1,610, adaptive 81 / 1,720; both fixed 248 / 1,508, adaptive 98 / 1,694.
+Signals now come close to give-way on throughput, and adaptive Milea-only is barely slower; fixed-time is still clearly worse.
+
+Next: deliberate lane-choice errors (a share of drivers in the wrong lane) to test the city's explanation of the 6 Oct queues.
 
 # Handoff notes – 7 Oct 2026
 

@@ -26,6 +26,8 @@ export function start(): void {
   const K = sim!.K, RR = K.RR, LW = K.LW, M = K.M;
   // The map frame is the city's Vissim image: 1920 × 1080 px at M m/px.
   const FW = 1920 * M, FH = 1080 * M;
+  /** Radius of ring lane `ri` (0 outer, 1 inner); positions `s` are measured on the centreline. */
+  const ringR = (ri: number) => RR + (ri ? -LW / 2 : LW / 2);
   const cv = $<HTMLCanvasElement>('map'), ctx = cv.getContext('2d')!, sp = $<HTMLCanvasElement>('spark'), sx = sp.getContext('2d')!;
   const col = {} as Record<ColorKey, string>;
   let sc = 1, dpr = 1, W = 0, H = 0;
@@ -44,11 +46,11 @@ export function start(): void {
   }
   function world(): void { ctx.setTransform(dpr * sc, 0, 0, dpr * sc, 0, 0); }
   function poly(pts: Pt[]): void { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); }
-  /** Carriageway of a simulated lane: its `nl` drawn lanes, the simulated one rightmost. */
+  /** Carriageway centreline, from its rightmost lane. */
   const carriage = (l: Lane) => offset(l.pts, -(l.nl - 1) * LW / 2);
-  /** Bar across a carriageway at `pos` along lane `l`, Vissim style: the stop line in the colour of its light. */
+  /** Bar across lane `l` at `pos`, Vissim style: the stop line in the colour of its light. */
   function bar(l: Lane, pos: number, c: string): void {
-    const p = along(l.pts, l.cum, drawn(l, pos)), nx = -p.dy, ny = p.dx, r = LW / 2, lft = (l.nl - 0.5) * LW;
+    const p = along(l.pts, l.cum, drawn(l, pos)), nx = -p.dy, ny = p.dx, r = LW / 2 - 0.15, lft = r;
     ctx.strokeStyle = c; ctx.lineWidth = Math.max(1.1, 2 / sc); ctx.beginPath();
     ctx.moveTo(p.x + nx * r, p.y + ny * r); ctx.lineTo(p.x - nx * lft, p.y - ny * lft); ctx.stroke();
   }
@@ -76,14 +78,14 @@ export function start(): void {
     ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
     // Road surface: every carriageway, then the rings over their ends.
     ctx.strokeStyle = col.road;
-    for (const l of sim.lanes) { ctx.lineWidth = l.nl * LW + 0.6; poly(carriage(l)); ctx.stroke(); }
+    for (const l of sim.lanes) if (l.k === 0) { ctx.lineWidth = l.nl * LW + 0.6; poly(carriage(l)); ctx.stroke(); }
     ctx.lineWidth = LW + 0.6; for (const s of STUBS) { poly(s); ctx.stroke(); }
     ctx.strokeStyle = col.mark; ctx.lineWidth = 0.25; ctx.setLineDash([3, 4.5]);
-    for (const l of sim.lanes) if (l.nl > 1) { poly(offset(l.pts, -LW / 2)); ctx.stroke(); }
+    for (const l of sim.lanes) if (l.nl > 1 && l.k === 0) { poly(offset(l.pts, -LW / 2)); ctx.stroke(); }
     ctx.setLineDash([]);
     for (const rb of sim.rbs) {
       ctx.beginPath(); ctx.arc(rb.x, rb.y, RR + 5.2, 0, 6.2832); ctx.fillStyle = col.road; ctx.fill();
-      ctx.strokeStyle = col.mark; ctx.lineWidth = 0.25; ctx.setLineDash([3, 4.5]); ctx.beginPath(); ctx.arc(rb.x, rb.y, RR - 1.7, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = col.mark; ctx.lineWidth = 0.25; ctx.setLineDash([3, 4.5]); ctx.beginPath(); ctx.arc(rb.x, rb.y, RR, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
       ctx.beginPath(); ctx.arc(rb.x, rb.y, RR - 5.2, 0, 6.2832); ctx.fillStyle = col.island; ctx.fill();
     }
     // Zebras: stripes across the road, kerb to kerb.
@@ -96,7 +98,7 @@ export function start(): void {
     const light = (c: Light) => c === 'g' ? col.go : c === 'a' ? col.slow : c === 'r' ? col.stop : amber;
     for (const a of sim.arms) {
       const s = a.sg;
-      for (const l of [a.inLane, ...(a.inLane.slip ? [a.inLane.slip.lane] : [])]) for (const st of l.stops) if (st.side === 'in') bar(l, st.pos, light(s ? s.entry : ''));
+      for (const l of [...a.inL, ...(a.inLane.slip ? [a.inLane.slip.lane] : [])]) for (const st of l.stops) if (st.side === 'in') bar(l, st.pos, light(s ? s.entry : ''));
       const th = -a.sStop / RR, cs = Math.cos(th), sn = Math.sin(th), rb = a.rb;
       ctx.strokeStyle = s ? (s.ring ? col.stop : col.go) : amber; ctx.lineWidth = Math.max(1.1, 2 / sc);
       ctx.beginPath(); ctx.moveTo(rb.x + (RR - 5) * cs, rb.y + (RR - 5) * sn); ctx.lineTo(rb.x + (RR + 5) * cs, rb.y + (RR + 5) * sn); ctx.stroke();
@@ -127,12 +129,12 @@ export function start(): void {
       if (v.pos < v.len && l.fromArm) {
         // Tail still in the ring: draw it along the ring arc.
         const fa = l.fromArm, s1 = fa.sExit, s0 = s1 - (v.len - v.pos);
-        ctx.beginPath(); ctx.arc(fa.rb.x, fa.rb.y, RR, -s1 / RR, -s0 / RR); ctx.stroke();
+        ctx.beginPath(); ctx.arc(fa.rb.x, fa.rb.y, ringR(v.ri), -s1 / RR, -s0 / RR); ctx.stroke();
       }
     }
     for (const rb of sim.rbs) for (const v of rb.veh) {
       ctx.strokeStyle = vc(v); ctx.lineWidth = vw(v);
-      ctx.beginPath(); ctx.arc(rb.x, rb.y, RR, -v.s / RR, -(v.s - v.len) / RR); ctx.stroke();
+      ctx.beginPath(); ctx.arc(rb.x, rb.y, ringR(v.ri), -v.s / RR, -(v.s - v.len) / RR); ctx.stroke();
     }
     // Labels where the model puts them; "+N" = vehicles queued beyond the edge of the map.
     for (const a of sim.arms) if (a.lab && a.name) plate(a.name + (a.link >= 0 ? ` · ${a.len} m` : ''), a.lab[0], a.lab[1], a.backlog.length ? '+' + a.backlog.length : '');

@@ -30,9 +30,9 @@ describe('createSim', () => {
     expect(s.crossings).toHaveLength(7);
     const sag = s.rbs[0].arms.find(a => a.name === 'Str. Andrei Șaguna')!;
     expect(sag.xs.map(x => x.mid)).toEqual([true, true]);
-    expect(sag.xs.every(x => x.stops.length === 1 && x.stops[0].lane === sag.inLane)).toBe(true);
-    // Both directions stop at the other five; the Coposu bypass is held by the Coposu entry light.
-    expect(s.crossings.filter(x => !x.mid).every(x => x.stops.length === 2)).toBe(true);
+    expect(sag.xs.every(x => x.stops.map(st => st.lane).join() === sag.inL.join())).toBe(true);
+    // Every lane in both directions stops at the other five; the Coposu bypass is held by the Coposu entry light.
+    for (const x of s.crossings.filter(x => !x.mid)) expect(x.stops).toHaveLength(x.arm.inL.length + x.arm.outL.length);
     const cop = s.rbs[0].arms.find(a => a.name === 'Bd. Corneliu Coposu')!;
     expect(cop.inLane.slip!.lane.stops.map(st => st.side)).toEqual(['in']);
   });
@@ -52,6 +52,23 @@ describe('createSim', () => {
     }
     expect(used.size).toBe(2);
     expect(walks).toBeGreaterThan(0);
+  });
+
+  it('uses both ring lanes and both approach lanes, without overlaps', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'}, mulberry32(4));
+    s.rbs.forEach(r => r.mode = 'signal');
+    const ringLanes = new Set<string>(), used = new Set<object>();
+    for (let i = 0; i < 6000; i++) {
+      s.step();
+      for (const rb of s.rbs) for (const v of rb.veh) ringLanes.add(rb.key + v.ri);
+      for (const l of s.lanes) {
+        if (l.veh.length) used.add(l);
+        for (let k = 1; k < l.veh.length; k++) expect(l.veh[k - 1].pos - l.veh[k - 1].len - l.veh[k].pos).toBeGreaterThan(-0.5);
+      }
+    }
+    expect(ringLanes.size).toBe(4);
+    // Every two-lane approach carries traffic in both lanes.
+    for (const a of s.arms) if (a.inL.length === 2 && (a.flow || a.link >= 0)) expect(a.inL.every(l => used.has(l))).toBe(true);
   });
 
   it('is deterministic for a given seed', () => {
@@ -95,11 +112,11 @@ describe('createSim', () => {
     expect(s.stats().flow).toBeGreaterThan(600);
   });
 
-  it('never overlaps vehicles in a ring', () => {
+  it('never overlaps vehicles in a ring lane', () => {
     const s = run(['signal', 'signal'], 3, 3000);
     const C = s.K.C;
-    for (const rb of s.rbs) {
-      const v = [...rb.veh].sort((a, b) => a.s - b.s);
+    for (const rb of s.rbs) for (const ri of [0, 1]) {
+      const v = rb.veh.filter(o => o.ri === ri).sort((a, b) => a.s - b.s);
       for (let i = 0; i < v.length; i++) {
         const ahead = v[(i + 1) % v.length];
         if (ahead === v[i]) continue;
