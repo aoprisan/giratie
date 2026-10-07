@@ -11,7 +11,7 @@ function $<T extends HTMLElement = HTMLElement>(id: string): T {
 }
 
 export function start(): void {
-  const P: Params = {demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0};
+  const P: Params = {demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0, agg: 0};
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let sim: Sim, speed = 2, paused = reduce, modes: Mode[] = ['classic', 'signal'];
   let hist: {t: number; v: number}[] = [], marks: number[] = [], lastHist = 0;
@@ -119,7 +119,7 @@ export function start(): void {
     }
     // Vehicles: a body 1.9 m wide (buses 2.5 m) along the lane, or along the ring.
     // Drivers in the wrong lane (still sorting it out) stand out in their own colour.
-    const vc = (v: Vehicle) => v.err === 1 || v.rw >= 0 ? col.wrong : v.bus ? col.bus : v.v < 0.5 ? col.stop : v.v < 4 ? col.slow : col.car;
+    const vc = (v: Vehicle) => v.err === 1 || v.rw >= 0 || v.both > sim.t ? col.wrong : v.bus ? col.bus : v.v < 0.5 ? col.stop : v.v < 4 ? col.slow : col.car;
     const vw = (v: Vehicle) => Math.max(v.bus ? 2.5 : 1.9, 2.2 / sc);
     for (const l of sim.lanes) for (const v of l.veh) {
       ctx.strokeStyle = vc(v); ctx.lineWidth = vw(v);
@@ -135,7 +135,8 @@ export function start(): void {
     }
     for (const rb of sim.rbs) for (const v of rb.veh) {
       ctx.strokeStyle = vc(v); ctx.lineWidth = vw(v);
-      ctx.beginPath(); ctx.arc(rb.x, rb.y, ringR(v.ri), -v.s / RR, -(v.s - v.len) / RR); ctx.stroke();
+      // A driver cutting across straddles the two ring lanes.
+      ctx.beginPath(); ctx.arc(rb.x, rb.y, v.both > sim.t ? RR : ringR(v.ri), -v.s / RR, -(v.s - v.len) / RR); ctx.stroke();
     }
     // Labels where the model puts them; "+N" = vehicles queued beyond the edge of the map.
     for (const a of sim.arms) if (a.lab && a.name) plate(a.name + (a.link >= 0 ? ` · ${a.len} m` : ''), a.lab[0], a.lab[1], a.backlog.length ? '+' + a.backlog.length : '');
@@ -217,6 +218,7 @@ export function start(): void {
   bind('cycle', v => P.cycle = v, v => v + ' s');
   bind('ped', v => P.ped = v, v => v + ' / h');
   bind('err', v => P.err = v / 100, v => v + '%');
+  bind('agg', v => P.agg = v / 100, v => v + '%');
   const planEl = $<HTMLSelectElement>('plan');
   planEl.onchange = () => { P.plan = planEl.value as Plan; marks.push(sim.t); };
   P.plan = planEl.value as Plan;

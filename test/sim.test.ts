@@ -91,6 +91,25 @@ describe('createSim', () => {
       .toEqual(a.arms.map(x => x.inL.reduce((m, l) => m + l.veh.length, 0) + x.backlog.length));
   });
 
+  it('lets aggressive wrong-lane drivers cut across the ring, blocking both lanes, without gridlock', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0.3, agg: 1}, mulberry32(6));
+    s.rbs.forEach(r => r.mode = 'signal');
+    let straddling = 0, blocked = 0;
+    for (let i = 0; i < 9000; i++) {
+      s.step();
+      for (const rb of s.rbs) for (const v of rb.veh) if (v.both > s.t) {
+        straddling++;
+        // Someone in the other lane is held up just behind it.
+        if (rb.veh.some(o => o.ri !== v.ri && o.v < 0.5 && (((v.s - o.s) % s.K.C) + s.K.C) % s.K.C < v.len + 4)) blocked++;
+      }
+      // Aggressive drivers never stop on the approach to change lanes.
+      for (const l of s.lanes) for (const v of l.veh) if (v.agg && v.err) expect(v.wait).toBe(-1);
+    }
+    expect(straddling).toBeGreaterThan(0);
+    expect(blocked).toBeGreaterThan(0);
+    expect(s.stats().flow).toBeGreaterThan(800);
+  });
+
   it('is deterministic for a given seed', () => {
     expect(run(['classic', 'signal'], 7).stats()).toEqual(run(['classic', 'signal'], 7).stats());
   });

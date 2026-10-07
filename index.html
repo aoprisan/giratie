@@ -56,6 +56,9 @@
     <div class="ctl"><label for="err">Drivers in the wrong lane</label><output id="err-o">0%</output>
       <input id="err" type="range" min="0" max="40" step="5" value="0">
       <small>Share of drivers who need a particular lane but pick the other. They notice 30 m before the stop line and stop there to squeeze across, or cut across in the ring.</small></div>
+    <div class="ctl"><label for="agg">Of those, forcing their way</label><output id="agg-o">0%</output>
+      <input id="agg" type="range" min="0" max="100" step="10" value="0">
+      <small>These only notice inside the ring and cut straight across it, straddling both lanes for 3 seconds: whoever is behind in either lane has to stop.</small></div>
     <div class="ctl"><label for="plan">Signal plan</label><span></span>
       <select id="plan" style="grid-column:1/-1"><option value="pair" selected>Corridor arms together, then side streets</option><option value="seq">One approach at a time</option></select>
       <small>Both are my guesses. The city has not published its phase plan.</small></div>

@@ -17,6 +17,8 @@ export interface Params {
   ctrl: Ctrl;
   /** Share of drivers (0–1) who pick the wrong lane on a two-lane approach and only notice near the stop line. */
   err?: number;
+  /** Share of those (0–1) who force their way instead: they notice only in the ring and cut across it, blocking both lanes. */
+  agg?: number;
 }
 
 export interface Signal {
@@ -35,6 +37,7 @@ export interface Pending {
   dest: Arm;
   bus: boolean;
   err: boolean;
+  agg: boolean;
 }
 
 export interface Vehicle {
@@ -59,6 +62,10 @@ export interface Vehicle {
    *  stuck in the outer lane stops to get into the inner one (just before the first exit after its entry). */
   rw: number;
   hs: number;
+  /** Forces its way when in the wrong lane (`P.agg`). */
+  agg: boolean;
+  /** Cutting across the ring: straddles both ring lanes until this time. */
+  both: number;
 }
 
 export interface Stop {
@@ -546,11 +553,12 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
       }
     }
     for (const o of rb.veh) {
-      if (o.ri !== k && !(k === 1 && o.ri === 0)) continue;
+      const ri = o.both > t ? k : o.ri;
+      if (ri !== k && !(k === 1 && ri === 0)) continue;
       const d = mod(o.s - a.sEntry, C);
-      if (o.ri === k ? d - o.len < 2.5 : d - o.len < 0.5) return false;
+      if (ri === k ? d - o.len < 2.5 : d - o.len < 0.5) return false;
       const du = C - d;
-      if (o.ri === k && o.exit !== a && du < len + 0.5) return false;
+      if (ri === k && o.exit !== a && du < len + 0.5) return false;
       if (strict) { if (o.exit !== a && du < 4 + o.v * 1.9) return false; }
       else if (du < 0.3 || (o.v > 2 && du < 3 + o.v)) return false;
     }
@@ -575,7 +583,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     }
     return true;
   }
-  const ERRD = 30, ERRW = 10;
+  const ERRD = 30, ERRW = 10, XT = 3;
   // Intelligent Driver Model.
   const AM = 1.8, BM = 2.5, TH = 1.1, SQ = 2 * Math.sqrt(AM * BM);
   function term(v: number, gap: number, dv: number, s0: number): number {
@@ -607,7 +615,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     }
     for (const a of arms) {
       if (a.link < 0 && a.flow) {
-        if (rng() < a.flow * P.demand / 3600 * DT) { const dest = pickDest(a); a.backlog.push({t, dest, bus: rng() < 0.035, err: rng() < (P.err ?? 0)}); }
+        if (rng() < a.flow * P.demand / 3600 * DT) { const dest = pickDest(a); a.backlog.push({t, dest, bus: rng() < 0.035, err: rng() < (P.err ?? 0), agg: rng() < (P.agg ?? 0)}); }
         if (a.backlog.length) {
           // Straight on: the lane with fewer vehicles. A share `P.err` of drivers who need one lane take the other.
           const b = a.backlog[0], w = want(b.dest, a.inLane), wrong = b.err && w >= 0 && !!a.inLane.sib;
@@ -615,7 +623,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
           if (!tl || tl.pos - tl.len > 7) {
             a.backlog.shift();
             l.veh.push({pos: 0, v: tl ? Math.min(11, tl.v + 2) : 11, len: b.bus ? 17 : 4.5, bus: b.bus, t0: b.t, dest: b.dest, lane: l, rb: null, s: 0, exit: null, step: n,
-              ri: 0, err: wrong ? 1 : 0, wait: -1, rw: -1, hs: 0});
+              ri: 0, err: wrong ? (b.agg ? 2 : 1) : 0, wait: -1, rw: -1, hs: 0, agg: b.agg, both: -1});
           }
         }
       }
@@ -627,7 +635,14 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
         let inter = 0, hard = Infinity;
         // Entered in the wrong lane: cut across to the other ring lane at the first gap. A driver in the outer lane who
         // needs the inner one stops before the next exit to wait for it, holding up the outer lane, for up to ERRW s.
-        if (v.rw >= 0) {
+        if (v.rw >= 0 && v.agg) {
+          // Aggressive: no early change. It forces across at the last moment, straddling both lanes for XT s, and whoever
+          // is behind in either lane has to stop: from the inner lane in the last 8 m before its exit (not giving way),
+          // from the outer lane just before the first exit after its entry.
+          const dh = mod(v.hs - 1 - v.s, C);
+          if (v.ri === 1 ? dEx < 8 : dh < 3 && dh < dEx) { v.ri = v.rw; v.rw = -1; v.both = t + XT; }
+          else if (v.ri === 0 && dh >= dEx) v.rw = -1;
+        } else if (v.rw >= 0) {
           let ok = true;
           for (const o of rb.veh) {
             if (o.ri !== v.rw) continue;
@@ -643,7 +658,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
           }
         }
         for (const o of rb.veh) {
-          if (o === v || o.ri !== v.ri) continue;
+          if (o === v || (o.ri !== v.ri && !(o.both > t))) continue;
           const gap = mod(o.s - v.s, C) - o.len;
           if (gap < dEx) { inter = Math.max(inter, term(v.v, gap, v.v - o.v, 2)); hard = Math.min(hard, gap); }
         }
@@ -651,7 +666,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
         // single exit lane) at this exit.
         if (v.ri === 1 && dEx < 15) {
           for (const o of rb.veh) {
-            if (o.ri !== 0 || (o.exit === ex && ex.outL.length > 1)) continue;
+            if ((o.ri !== 0 && !(o.both > t)) || o === v || (o.exit === ex && ex.outL.length > 1)) continue;
             if (mod(ex.sExit - o.s, C) < 3 + o.v * 1.5 || mod(o.s - ex.sExit, C) < o.len + 0.5) {
               inter = Math.max(inter, term(v.v, dEx, v.v, 0.6)); hard = Math.min(hard, dEx); break;
             }
@@ -677,11 +692,11 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
             }
           }
         }
-        const ds = advance(v, 7.5, inter, hard);
+        const ds = advance(v, v.both > t ? 4 : 7.5, inter, hard);
         if (ds >= dEx) {
           rb.veh.splice(rb.veh.indexOf(v), 1); v.rb = null; v.lane = ol; v.pos = ds - dEx; ol.veh.push(v);
           // Onto a link: a share `P.err` of drivers do not change lanes early for the next ring.
-          if (rng() < (P.err ?? 0) && ol.endArm && ol.sib) v.err = 1;
+          if (rng() < (P.err ?? 0) && ol.endArm && ol.sib) v.err = v.agg ? 2 : 1;
         }
         else v.s = mod(v.s + ds, C);
       }
