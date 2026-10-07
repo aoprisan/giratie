@@ -2,18 +2,21 @@
    one control card under each roundabout, then demand sliders beside the live readings. */
 :root{
   --bg:#eceff3;--surface:#fafbfc;--ink:#17202a;--muted:#566473;--line:#d0d7df;--accent:#1558b0;--accent-ink:#ffffff;
-  --ground:#e4e9e1;--road:#c5ccd5;--mark:#ffffff;--island:#b4cba8;--car:#17202a;--bus:#1558b0;
-  --stop:#cf2a2a;--slow:#d98200;--go:#1c9150;--ped:#7a3fc4;--head:#1d252e;--lampoff:#46525e;
+  --ground:#d3d3d3;--road:#8c8c8c;--mark:#ffffff;--island:#d3d3d3;--car:#17202a;--bus:#1558b0;
+  --stop:#e0201b;--slow:#f29d00;--go:#14a514;--ped:#7a3fc4;--wrong:#d4237a;--lampoff:#6b7178;
+  --label:#2b3142;--labelink:#ffffff;--title:#5c5c5c;
   --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;--body:"Barlow","Segoe UI",system-ui,sans-serif;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#11161c;--surface:#19212a;--ink:#e7ecf1;--muted:#95a2af;--line:#2d3844;--accent:#6aa9ff;--accent-ink:#0c1420;
-  --ground:#151c1a;--road:#39444f;--mark:#8e9aa6;--island:#2b4835;--car:#e7ecf1;--bus:#6aa9ff;
-  --stop:#ff5a52;--slow:#ffb020;--go:#3ecf7a;--ped:#c79bff;--head:#06090c;--lampoff:#2a333d;color-scheme:dark}}
+  --ground:#1d2125;--road:#4b525a;--mark:#aab2bb;--island:#1d2125;--car:#e7ecf1;--bus:#6aa9ff;
+  --stop:#ff5a52;--slow:#ffb020;--go:#3ecf7a;--ped:#c79bff;--wrong:#ff6fb0;--lampoff:#30373f;
+  --label:#0b0f14;--labelink:#e7ecf1;--title:#000000;color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#11161c;--surface:#19212a;--ink:#e7ecf1;--muted:#95a2af;--line:#2d3844;--accent:#6aa9ff;--accent-ink:#0c1420;
-  --ground:#151c1a;--road:#39444f;--mark:#8e9aa6;--island:#2b4835;--car:#e7ecf1;--bus:#6aa9ff;
-  --stop:#ff5a52;--slow:#ffb020;--go:#3ecf7a;--ped:#c79bff;--head:#06090c;--lampoff:#2a333d;color-scheme:dark}
+  --ground:#1d2125;--road:#4b525a;--mark:#aab2bb;--island:#1d2125;--car:#e7ecf1;--bus:#6aa9ff;
+  --stop:#ff5a52;--slow:#ffb020;--go:#3ecf7a;--ped:#c79bff;--wrong:#ff6fb0;--lampoff:#30373f;
+  --label:#0b0f14;--labelink:#e7ecf1;--title:#000000;color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5}
 .wrap{max-width:1280px;margin:0 auto;padding-inline:16px;padding-block:24px 48px;display:flex;flex-direction:column;gap:20px}
@@ -37,7 +40,8 @@ select{font:500 14px var(--body);padding:7px 8px;border-radius:6px;border:1px so
 #map{display:block;width:100%;min-width:820px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--muted)}
 .legend i{display:inline-block;width:14px;height:5px;border-radius:2px;margin-right:6px;vertical-align:middle}
-.legend i.sh{width:14px;height:6px;border-radius:2px;background:radial-gradient(circle at 2.5px 3px,var(--stop) 1.6px,transparent 1.9px),radial-gradient(circle at 7px 3px,var(--lampoff) 1.6px,transparent 1.9px),radial-gradient(circle at 11.5px 3px,var(--lampoff) 1.6px,transparent 1.9px),var(--head)}
+.legend i.bar{width:4px;height:14px;border-radius:1px;background:var(--stop);box-shadow:7px 0 0 var(--go)}
+.legend i.pb{width:10px;height:10px;border-radius:1px;background:var(--go)}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .card dl{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin:0;font-size:14px}

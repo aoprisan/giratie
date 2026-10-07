@@ -1,3 +1,31 @@
+# Handoff notes – 7 Oct 2026 (Vissim layout)
+
+Branch `claude/sharp-franklin-3jlvv6`. The map and network now follow the city's Vissim image ("Fluxuri simultane") at true scale:
+- Every carriageway is a polyline traced from the image (`defs` in sim.ts, image px × 0.381 m/px); ring radius 16 m.
+- Every signal in the image is modelled and drawn the way the image draws it (coloured stop bars, pedestrian blocks):
+  8 stop lines per ring, 7 crossings including the two mid-block push-button crossings on Str. Andrei Șaguna.
+- Two right-turn bypasses (Coposu → Șaguna, signalised with the Coposu entry; Dumbrăvii → V. Milea, unsignalised).
+- Șaguna now feeds 250 veh/h into Ramada on its curved carriageway, as the image shows (OSM disagrees; see CLAUDE.md).
+
+Mean of 6 seeds, 20 min, pair plan, 70 s cycle (trip s / veh/h): all give-way 59 / 1,786; Milea only fixed 356 / 1,026,
+adaptive 142 / 1,424; both fixed 444 / 960, adaptive 202 / 1,598.
+
+Then: two-lane rings and approaches, as the image draws them (details in CLAUDE.md). Mean of 6 seeds, same settings:
+all give-way 55 / 1,728; Milea only fixed 119 / 1,610, adaptive 81 / 1,720; both fixed 248 / 1,508, adaptive 98 / 1,694.
+Signals now come close to give-way on throughput, and adaptive Milea-only is barely slower; fixed-time is still clearly worse.
+
+Then: lane-choice errors (`P.err`, "Drivers in the wrong lane" slider) to test the city's explanation of the 6 Oct queues
+(details and numbers in CLAUDE.md). Result: 30% of drivers in the wrong lane add at most ~15% to trip times under signals and
+nothing under give-way; fixed-time vs adaptive matters far more. The errant drivers are polite (they stop and wait), so this is a
+lower bound on the harm.
+
+Then: aggressive errors (`P.agg`, "Of those, forcing their way"): erring drivers cut across the ring at the last moment,
+straddling both lanes for 3 s. They hurt most where signals are already saturated (both fixed at 125% demand: 383 s → 441–514 s,
+throughput 1,363 → ~1,100), a little under adaptive control, not at all under give-way. No gridlock. Details in CLAUDE.md.
+
+Next: real lane markings and arrows from the city (lane choice is by turning angle); a standoff model (both drivers stop) for
+forced cuts; coordination between the two rings.
+
 # Handoff notes – 7 Oct 2026
 
 Branch `ccr-ce00a6d3-e0wxzz`. See `CLAUDE.md` for the model itself; this file is what to pick up next.

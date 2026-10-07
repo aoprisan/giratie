@@ -13,13 +13,101 @@ describe('createSim', () => {
     const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'});
     expect(s.rbs.map(r => r.key)).toEqual(['ramada', 'milea']);
     expect(s.arms).toHaveLength(8);
-    // The link is modelled at its real (OSM) route length, longer than drawn; Șaguna is one-way westbound (exit only).
+    // The link is modelled at its real (OSM) route length; Șaguna comes in on its curved carriageway, as in the city's model.
     expect(s.rbs[1].west!.outLane.L).toBeGreaterThanOrEqual(195);
-    expect(s.rbs[0].arms.find(a => a.name === 'Str. Andrei Șaguna')!.flow).toBe(0);
+    expect(s.rbs[0].arms.find(a => a.name === 'Str. Andrei Șaguna')!.flow).toBeGreaterThan(0);
     for (const a of s.arms) {
       expect(a.inLane.endArm).toBe(a);
       expect(a.outLane.fromArm).toBe(a);
     }
+  });
+
+  it('has every signal in the city\'s model', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'});
+    // Per ring: an entry stop line and a ring stop line for each of its four arms.
+    for (const rb of s.rbs) expect(rb.arms.filter(a => a.inStop.side === 'in')).toHaveLength(4);
+    // Seven crossings: Coposu, Cioran, two mid-block on Șaguna, Noica, V. Milea, Dumbrăvii.
+    expect(s.crossings).toHaveLength(7);
+    const sag = s.rbs[0].arms.find(a => a.name === 'Str. Andrei Șaguna')!;
+    expect(sag.xs.map(x => x.mid)).toEqual([true, true]);
+    expect(sag.xs.every(x => x.stops.map(st => st.lane).join() === sag.inL.join())).toBe(true);
+    // Every lane in both directions stops at the other five; the Coposu bypass is held by the Coposu entry light.
+    for (const x of s.crossings.filter(x => !x.mid)) expect(x.stops).toHaveLength(x.arm.inL.length + x.arm.outL.length);
+    const cop = s.rbs[0].arms.find(a => a.name === 'Bd. Corneliu Coposu')!;
+    expect(cop.inLane.slip!.lane.stops.map(st => st.side)).toEqual(['in']);
+  });
+
+  it('runs traffic over both bypasses and the mid-block crossings', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 300, plan: 'pair', ctrl: 'adaptive'}, mulberry32(2));
+    s.rbs.forEach(r => r.mode = 'signal');
+    const slips = s.lanes.filter(l => l.merge), used = new Set<number>();
+    const sag = s.rbs[0].arms.find(a => a.name === 'Str. Andrei Șaguna')!;
+    let walks = 0;
+    for (let i = 0; i < 6000; i++) {
+      s.step();
+      slips.forEach((l, k) => { if (l.veh.length) used.add(k); });
+      for (const x of sag.xs) {
+        if (x.walk) { walks++; expect(x.car).toBe('r'); }
+      }
+    }
+    expect(used.size).toBe(2);
+    expect(walks).toBeGreaterThan(0);
+  });
+
+  it('uses both ring lanes and both approach lanes, without overlaps', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'}, mulberry32(4));
+    s.rbs.forEach(r => r.mode = 'signal');
+    const ringLanes = new Set<string>(), used = new Set<object>();
+    for (let i = 0; i < 6000; i++) {
+      s.step();
+      for (const rb of s.rbs) for (const v of rb.veh) ringLanes.add(rb.key + v.ri);
+      for (const l of s.lanes) {
+        if (l.veh.length) used.add(l);
+        for (let k = 1; k < l.veh.length; k++) expect(l.veh[k - 1].pos - l.veh[k - 1].len - l.veh[k].pos).toBeGreaterThan(-0.5);
+      }
+    }
+    expect(ringLanes.size).toBe(4);
+    // Every two-lane approach carries traffic in both lanes.
+    for (const a of s.arms) if (a.inL.length === 2 && (a.flow || a.link >= 0)) expect(a.inL.every(l => used.has(l))).toBe(true);
+  });
+
+  it('puts a share of drivers in the wrong lane, who sort it out late or in the ring without gridlock', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0.3}, mulberry32(6));
+    s.rbs.forEach(r => r.mode = 'signal');
+    let erring = 0, cutting = 0;
+    for (let i = 0; i < 9000; i++) {
+      s.step();
+      for (const l of s.lanes) for (const v of l.veh) if (v.err === 1 && v.lane!.endArm && v.lane!.sib) erring++;
+      for (const rb of s.rbs) for (const v of rb.veh) if (v.rw >= 0) cutting++;
+    }
+    expect(erring).toBeGreaterThan(0);
+    expect(cutting).toBeGreaterThan(0);
+    expect(s.stats().flow).toBeGreaterThan(1000);
+    // Same seed and no errors: identical traffic demand, so the error draws do not shift other random numbers.
+    const a = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0}, mulberry32(6));
+    const b = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0.3}, mulberry32(6));
+    for (let i = 0; i < 300; i++) { a.step(); b.step(); }
+    expect(b.arms.map(x => x.inL.reduce((m, l) => m + l.veh.length, 0) + x.backlog.length))
+      .toEqual(a.arms.map(x => x.inL.reduce((m, l) => m + l.veh.length, 0) + x.backlog.length));
+  });
+
+  it('lets aggressive wrong-lane drivers cut across the ring, blocking both lanes, without gridlock', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive', err: 0.3, agg: 1}, mulberry32(6));
+    s.rbs.forEach(r => r.mode = 'signal');
+    let straddling = 0, blocked = 0;
+    for (let i = 0; i < 9000; i++) {
+      s.step();
+      for (const rb of s.rbs) for (const v of rb.veh) if (v.both > s.t) {
+        straddling++;
+        // Someone in the other lane is held up just behind it.
+        if (rb.veh.some(o => o.ri !== v.ri && o.v < 0.5 && (((v.s - o.s) % s.K.C) + s.K.C) % s.K.C < v.len + 4)) blocked++;
+      }
+      // Aggressive drivers never stop on the approach to change lanes.
+      for (const l of s.lanes) for (const v of l.veh) if (v.agg && v.err) expect(v.wait).toBe(-1);
+    }
+    expect(straddling).toBeGreaterThan(0);
+    expect(blocked).toBeGreaterThan(0);
+    expect(s.stats().flow).toBeGreaterThan(800);
   });
 
   it('is deterministic for a given seed', () => {
@@ -63,11 +151,11 @@ describe('createSim', () => {
     expect(s.stats().flow).toBeGreaterThan(600);
   });
 
-  it('never overlaps vehicles in a ring', () => {
+  it('never overlaps vehicles in a ring lane', () => {
     const s = run(['signal', 'signal'], 3, 3000);
     const C = s.K.C;
-    for (const rb of s.rbs) {
-      const v = [...rb.veh].sort((a, b) => a.s - b.s);
+    for (const rb of s.rbs) for (const ri of [0, 1]) {
+      const v = rb.veh.filter(o => o.ri === ri).sort((a, b) => a.s - b.s);
       for (let i = 0; i < v.length; i++) {
         const ahead = v[(i + 1) % v.length];
         if (ahead === v[i]) continue;
