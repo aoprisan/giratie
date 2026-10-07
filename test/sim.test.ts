@@ -1,8 +1,8 @@
 import {describe, expect, it} from 'vitest';
-import {createSim, mulberry32, type Mode} from '../src/sim';
+import {createSim, mulberry32, type Ctrl, type Mode} from '../src/sim';
 
-function run(modes: Mode[], seed = 1, steps = 6000) {
-  const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair'}, mulberry32(seed));
+function run(modes: Mode[], seed = 1, steps = 6000, ctrl: Ctrl = 'adaptive') {
+  const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl}, mulberry32(seed));
   s.rbs.forEach((r, i) => r.mode = modes[i]);
   for (let i = 0; i < steps; i++) s.step();
   return s;
@@ -10,9 +10,13 @@ function run(modes: Mode[], seed = 1, steps = 6000) {
 
 describe('createSim', () => {
   it('builds the corridor network', () => {
-    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair'});
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'});
     expect(s.rbs.map(r => r.key)).toEqual(['morilor', 'ramada', 'milea']);
-    expect(s.arms).toHaveLength(11);
+    expect(s.arms).toHaveLength(12);
+    expect(s.rbs[0].arms.map(a => a.name)).toContain('Str. Turismului');
+    // Links are modelled at their (estimated) real length, longer than drawn.
+    expect(s.rbs[1].west!.outLane.L).toBeGreaterThanOrEqual(900);
+    expect(s.rbs[2].west!.outLane.L).toBeGreaterThanOrEqual(260);
     for (const a of s.arms) {
       expect(a.inLane.endArm).toBe(a);
       expect(a.outLane.fromArm).toBe(a);
@@ -31,6 +35,20 @@ describe('createSim', () => {
       expect(st.trip).toBeGreaterThan(0);
     });
   }
+
+  it('adaptive control never shows green to conflicting groups and beats fixed-time', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'}, mulberry32(5));
+    s.rbs.forEach(r => r.mode = 'signal');
+    for (let i = 0; i < 4000; i++) {
+      s.step();
+      for (const rb of s.rbs) {
+        const g = new Set(rb.arms.filter(a => a.sg!.entry === 'g').map(a => a.g));
+        expect(g.size).toBeLessThanOrEqual(1);
+      }
+    }
+    const all: Mode[] = ['signal', 'signal', 'signal'];
+    expect(run(all, 1, 12000, 'adaptive').stats().trip).toBeLessThan(run(all, 1, 12000, 'fixed').stats().trip);
+  });
 
   it('never overlaps vehicles in a ring', () => {
     const s = run(['signal', 'signal', 'signal'], 3, 3000);

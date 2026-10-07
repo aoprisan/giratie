@@ -53,6 +53,9 @@
     <div class="ctl"><label for="plan">Signal plan</label><span></span>
       <select id="plan" style="grid-column:1/-1"><option value="pair" selected>Corridor arms together, then side streets</option><option value="seq">One approach at a time</option></select>
       <small>Both are my guesses. The city has not published its phase plan.</small></div>
+    <div class="ctl"><label for="ctrl">Signal logic</label><span></span>
+      <select id="ctrl" style="grid-column:1/-1"><option value="adaptive" selected>Adaptive: detectors stretch or cut each green, buses get priority</option><option value="fixed">Fixed-time: every green lasts its full share</option></select>
+      <small>Sibiu's Swarco system is adaptive. With adaptive logic the cycle above is the longest a full round of greens may take.</small></div>
   </div>
   <div class="panel">
     <h2>Whole corridor</h2>
@@ -70,8 +73,10 @@
 <div class="notes">
   <h2>What this models, and what it does not</h2>
   <p>Each car follows the one ahead with the Intelligent Driver Model. On give-way, a car enters when the ring is clear to its left. On signals, each approach has an entry light, a stop line on the ring just before it, and a pedestrian light on the exit. A vehicle held at an exit light can leave its tail across the ring, which is how the articulated buses blocked the Dumbrăvii direction on the morning described in the article.</p>
-  <p>The layout is a schematic. Each roundabout has one ring lane and one lane per approach, the real ones have more, and the Șaguna link is drawn shorter than it is. Traffic volumes and signal timings are assumptions, so read the result as a direction, never as a forecast. A single-lane ring has little room to store vehicles between stop lines, and that flatters give-way here.</p>
-  <p>Source: <a href="https://www.turnulsfatului.ro/2026/10/06/un-pic-de-haos-domnule-un-singur-semafor-de-giratoriu-a-pornit-marti-dimineata-tocmai-cel-unde-pietonii-erau-obligati-sa-se-amestece-printre-masini/">Turnul Sfatului, 6 October 2026</a>. The signals at Milea × Dumbrăvii ran for about two hours and were put back on flashing amber.</p>
+  <p>The three roundabouts and their arms are the ones the city named: Șos. Alba Iulia × Str. Morilor × Str. Turismului; Piața Unirii × Bd. Corneliu Coposu × Str. Andrei Șaguna × Str. Emil Cioran (“Ramada”); and Bd. Vasile Milea × Calea Dumbrăvii × Piața Unirii × Str. Constantin Noica, the street that passes under the “blocul-plombă”. The two links are modelled at roughly their real lengths, about 900 m of Șaguna and 260 m of Piața Unirii, but drawn compressed. The angles of the arms are schematic.</p>
+  <p>Adaptive control works the way the city described it: detectors in each approach keep a green running while traffic keeps arriving, cut it after a gap of 2.5 s, skip approaches with nobody waiting, and give an approaching bus its green early. A green also ends early when the ring is half full. Pedestrian windows open only when someone is waiting.</p>
+  <p>The layout is still a schematic. Each roundabout has one ring lane and one lane per approach, the real ones have two in places, so lane-choice errors, which the city blamed for most of the 6 October queues, are not modelled. Traffic volumes and signal timings are assumptions, so read the result as a direction, never as a forecast. A single-lane ring has little room to store vehicles between stop lines, and that flatters give-way here.</p>
+  <p>Sources: <a href="https://www.turnulsfatului.ro/2026/10/06/un-pic-de-haos-domnule-un-singur-semafor-de-giratoriu-a-pornit-marti-dimineata-tocmai-cel-unde-pietonii-erau-obligati-sa-se-amestece-printre-masini/">Turnul Sfatului, 6 October 2026</a>; <a href="https://www.turnulsfatului.ro/2026/10/02/semafoarele-din-giratoiu-vor-fi-puse-in-functiune-de-marti-6-octombrie-anunt-oficial-de-la-primarie/">city announcement, 2 October</a>; <a href="https://mesageruldesibiu.ro/3-000-de-masini-in-doua-ore-intersectiile-din-sibiu-unde-vor-functiona-semafoarele-smart/">Mesagerul de Sibiu</a> (about 3,000 vehicles between 7 and 9 am at Milea × Dumbrăvii); <a href="https://www.turnulsfatului.ro/2026/10/07/semafoarele-din-giratoriile-sibiului-vor-fi-repornite-dupa-refacerea-marcajelor-rutiere-peste-80-din-deficiente-au-avut-drept-cauza-incadrarile-gresite/">Turnul Sfatului, 7 October</a>. The signals at Milea × Dumbrăvii ran for about two hours and were put back on flashing amber.</p>
 </div>
 </div>
 <script type="module" src="/src/main.ts"></script>
