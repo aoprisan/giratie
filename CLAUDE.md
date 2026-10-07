@@ -26,6 +26,13 @@ both fixed 273 / 1,411 → 316 / 1,303 → 335 / 1,271, adaptive 121 / 1,836 →
 At 125% demand: both fixed 383 / 1,363 → 441 / 1,091 → 514 / 1,126; both adaptive 230 → 244 → 264 s; give-way unchanged (58–60 s).
 Forcing hurts most where the signals are already saturated (fixed-time near capacity: +20–35% trip, −20% throughput), barely
 under adaptive control, and not at all under give-way. Still no gridlock: it adds to a signal problem, it does not create one.
+No lane markings (`P.marked = false`; 12 seeds, 30 min; painted → none, polite → none, 50% forcing; trip s / veh/h):
+give-way 56 → 58 → 59 s; Milea only fixed 150 → 138 → 145 s, adaptive 71 → 121 → 105 s; both fixed 242 → 271 → 277 s,
+adaptive 123 / 1,796 → 193 / 1,622 → 169 / 1,659. At 125% demand: give-way 59 → 65 → 66 s; Milea only adaptive 106 → 179 → 165 s;
+both fixed 402 → 406 → 431 s; both adaptive 204 / 2,029 → 296 / 1,749 → 300 / 1,737.
+Missing markings cost adaptive signals 50–70% on trip time (and ~15% throughput near capacity), fixed-time little (already
+the bottleneck), give-way almost nothing. So they explain much of the 6 Oct trouble, but with markings painted the signals
+are still 2× slower than give-way here (invented flows and timings).
 
 ## Layout
 TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-singlefile`).
@@ -34,7 +41,7 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 - `src/ui.ts`   – canvas rendering, controls, readouts. Reads colours from CSS tokens.
 - `src/main.ts` – entry point; `src/style.css` – CSS (light/dark tokens on `:root`); `index.html` – markup.
 - `npm run build` – typechecks, then emits `dist/index.html`.
-- `test/sim.test.ts` / `npm test` – vitest: network shape, every signal in the Vissim image, bypasses and mid-block crossings in use, both ring and approach lanes in use without overlaps, lane-choice errors (polite and forcing),
+- `test/sim.test.ts` / `npm test` – vitest: network shape, every signal in the Vissim image, bypasses and mid-block crossings in use, both ring and approach lanes in use without overlaps, lane-choice errors (polite and forcing), no lane markings without gridlock,
   determinism, throughput sanity, no ring overlap.
 - `scripts/scenarios.ts` / `npm run scenarios [-- seed [err]]` – 20 simulated minutes per scenario, prints trip time, throughput, queues.
 - `.github/workflows/pages.yml` – test + build on every push/PR, deploy `dist/` to GitHub Pages from `main`.
@@ -64,6 +71,12 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
   (`Vehicle.both`, `XT` = 3 s) the driver crawls at ≤ 4 m/s and counts as in both ring lanes, for followers, for the inner-exit
   yield and for `canEnter`, so whoever is behind in either lane stops. Drawn on the ring centreline. Forcing early (right after
   entry) did nothing: the entry gap rules leave room to change politely, so the cut is placed where it conflicts.
+- No lane markings (`P.marked`, default painted; UI "Lane markings"; read each step): on two-lane approaches drivers take a
+  random lane (`Pending.side`, always drawn from `rng`) and never change before the ring (`err` 2, also on links); a driver in
+  the wrong ring lane sorts it out inside the ring (`rw`, polite or `P.agg` forcing; `P.err` does not apply). On the ring,
+  drivers stay `STAG` = 2.5 m short of level with a MOVING car in the other lane (no side-by-side driving), but pull up beside
+  a stopped one: staggering behind stopped cars locked a full ring in one circle of waiting cars. Entrants from either lane
+  give way to both ring lanes. The UI hides lane dashes and adds "no lane markings" to the title.
 - Ring lane conflicts: the outer lane yields to the outer lane, the inner lane (crossing the outer) to both (`canEnter(a, len, ex, k)`).
   Leaving from the inner lane gives way to outer-lane vehicles passing the exit (or taking the same one-lane exit); inner goes to
   the exit's left lane (`exitLane`). Exit spillback blocks only the ring lane the stuck vehicle came from.
@@ -101,7 +114,8 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
   plus the ring vehicles already heading there. Without it Ramada and Milea gridlock for good across the 195 m link.
 
 ## Known simplifications (candidates for next work)
-- No turbo lane dividers or lane-specific arrows from the real markings; lane choice is by turning angle.
+- No turbo lane dividers or lane-specific arrows from the real markings; lane choice is by turning angle. The user saw no
+  markings on the roads; a Legea 544/2001 request for the marking plan, signal plans, Vissim model and counts has been drafted.
 - Per-arm flows (`flow`, veh/h) and signal timings are invented, scaled to the one published count. No real counts, no published phase plan.
 - Vehicles queued past the map edge sit in `arm.backlog`. The side street at Șaguna's first crossing is drawn (`STUBS` in ui.ts) without traffic.
 - Lane-choice errors: no collisions or standoffs beyond the 3 s straddle; no unfamiliarity with new markings beyond the `P.err`

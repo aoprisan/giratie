@@ -81,11 +81,11 @@ export function start(): void {
     for (const l of sim.lanes) if (l.k === 0) { ctx.lineWidth = l.nl * LW + 0.6; poly(carriage(l)); ctx.stroke(); }
     ctx.lineWidth = LW + 0.6; for (const s of STUBS) { poly(s); ctx.stroke(); }
     ctx.strokeStyle = col.mark; ctx.lineWidth = 0.25; ctx.setLineDash([3, 4.5]);
-    for (const l of sim.lanes) if (l.nl > 1 && l.k === 0) { poly(offset(l.pts, -LW / 2)); ctx.stroke(); }
+    if (P.marked !== false) for (const l of sim.lanes) if (l.nl > 1 && l.k === 0) { poly(offset(l.pts, -LW / 2)); ctx.stroke(); }
     ctx.setLineDash([]);
     for (const rb of sim.rbs) {
       ctx.beginPath(); ctx.arc(rb.x, rb.y, RR + 5.2, 0, 6.2832); ctx.fillStyle = col.road; ctx.fill();
-      ctx.strokeStyle = col.mark; ctx.lineWidth = 0.25; ctx.setLineDash([3, 4.5]); ctx.beginPath(); ctx.arc(rb.x, rb.y, RR, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
+      if (P.marked !== false) { ctx.strokeStyle = col.mark; ctx.lineWidth = 0.25; ctx.setLineDash([3, 4.5]); ctx.beginPath(); ctx.arc(rb.x, rb.y, RR, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]); }
       ctx.beginPath(); ctx.arc(rb.x, rb.y, RR - 5.2, 0, 6.2832); ctx.fillStyle = col.island; ctx.fill();
     }
     // Zebras: stripes across the road, kerb to kerb.
@@ -145,7 +145,7 @@ export function start(): void {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 0.72; ctx.fillStyle = col.title; ctx.fillRect(24 * M * sc, 18 * M * sc, 1872 * M * sc, 62 * M * sc); ctx.globalAlpha = 1;
     ctx.font = `700 ${fs}px Barlow, sans-serif`; ctx.textBaseline = 'middle'; ctx.fillStyle = col.labelink;
     const what = (i: number) => sim.rbs[i].mode === 'signal' ? (P.ctrl === 'adaptive' ? 'adaptive signals' : 'fixed-time signals') : 'flashing amber';
-    ctx.fillText(`Ramada: ${what(0)} · Milea: ${what(1)}`, 34 * M * sc, 49 * M * sc);
+    ctx.fillText(`Ramada: ${what(0)} · Milea: ${what(1)}${P.marked === false ? ' · no lane markings' : ''}`, 34 * M * sc, 49 * M * sc);
   }
   function dot(x: number, y: number, r: number, c: string): void {
     ctx.beginPath(); ctx.arc(x, y, Math.max(r, 2.2 / sc), 0, 6.2832); ctx.fillStyle = c; ctx.fill();
@@ -225,6 +225,9 @@ export function start(): void {
   const ctrlEl = $<HTMLSelectElement>('ctrl');
   ctrlEl.onchange = () => { P.ctrl = ctrlEl.value as Ctrl; marks.push(sim.t); };
   P.ctrl = ctrlEl.value as Ctrl;
+  const markEl = $<HTMLSelectElement>('marked');
+  markEl.onchange = () => { P.marked = markEl.value === 'yes'; marks.push(sim.t); };
+  P.marked = markEl.value === 'yes';
 
   const p2 = (n: number) => String(n).padStart(2, '0');
   function readouts(): void {
