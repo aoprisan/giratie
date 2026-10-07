@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sibiu Roundabout Signals</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
+</head>
+<body style="margin:0">
+<div class="wrap">
+<header>
+  <div class="eyebrow">Sibiu · V. Milea – A. Șaguna – Șos. Alba Iulia</div>
+  <h1>What happens when a roundabout gets traffic lights</h1>
+  <p class="lede">A simulation of the three roundabouts where the city's adaptive signals were due to start on 6 October 2026. Switch each one between give-way and signals and watch where the queues go.</p>
+</header>
+
+<div class="bar">
+  <div class="seg" role="group" aria-label="Scenario">
+    <button id="sc-before" type="button" aria-pressed="false">Before: all flashing amber</button>
+    <button id="sc-oct6" type="button" aria-pressed="true">6 Oct, 10:00: Milea only</button>
+    <button id="sc-full" type="button" aria-pressed="false">Full plan: all three</button>
+  </div>
+  <button class="btn" id="pause" type="button">Pause</button>
+  <button class="btn" id="reset" type="button">Restart</button>
+  <label>Speed <select id="speed"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option><option value="8">8×</option></select></label>
+  <div class="clock"><small>simulated time</small><span id="clock">10:00:00</span></div>
+</div>
+
+<div class="mapbox"><canvas id="map" aria-label="Animated schematic map of the three roundabouts with moving vehicles"></canvas></div>
+<div class="legend">
+  <span><i style="background:var(--car)"></i>moving</span>
+  <span><i style="background:var(--slow)"></i>crawling</span>
+  <span><i style="background:var(--stop)"></i>stopped</span>
+  <span><i style="background:var(--bus)"></i>articulated bus</span>
+  <span><i style="background:var(--ped);width:6px;height:6px;border-radius:50%"></i>pedestrian</span>
+  <span>“+N” = vehicles queued beyond the edge of the map</span>
+</div>
+
+<div class="cards" id="cards"></div>
+
+<div class="lower">
+  <div class="panel">
+    <h2>Conditions</h2>
+    <div class="ctl"><label for="demand">Traffic demand</label><output id="demand-o">100%</output>
+      <input id="demand" type="range" min="40" max="150" step="5" value="100">
+      <small>100% is about 2,500 vehicles an hour entering the corridor, close to what one ring lane can carry.</small></div>
+    <div class="ctl"><label for="cycle">Signal cycle</label><output id="cycle-o">70 s</output>
+      <input id="cycle" type="range" min="40" max="120" step="5" value="70">
+      <small>Time for every approach to get one green.</small></div>
+    <div class="ctl"><label for="ped">Pedestrians per crossing</label><output id="ped-o">120 / h</output>
+      <input id="ped" type="range" min="0" max="600" step="20" value="120">
+      <small>On give-way they stop cars whenever they step out. On signals they wait for an 8-second window.</small></div>
+    <div class="ctl"><label for="plan">Signal plan</label><span></span>
+      <select id="plan" style="grid-column:1/-1"><option value="pair" selected>Corridor arms together, then side streets</option><option value="seq">One approach at a time</option></select>
+      <small>Both are my guesses. The city has not published its phase plan.</small></div>
+  </div>
+  <div class="panel">
+    <h2>Whole corridor</h2>
+    <div class="tiles">
+      <div class="tile"><b id="t-trip">–</b><span>average trip, last 5 min</span></div>
+      <div class="tile"><b id="t-flow">–</b><span>vehicles getting through per hour</span></div>
+      <div class="tile"><b id="t-stop">–</b><span>stopped on the map now</span></div>
+      <div class="tile"><b id="t-back">–</b><span>queued beyond the map</span></div>
+    </div>
+    <canvas id="spark" aria-label="Vehicles stopped or queued over the last 20 simulated minutes"></canvas>
+    <p class="cap">Vehicles stopped or queued, last 20 simulated minutes. Dashed lines mark a change of scenario or control.</p>
+  </div>
+</div>
+
+<div class="notes">
+  <h2>What this models, and what it does not</h2>
+  <p>Each car follows the one ahead with the Intelligent Driver Model. On give-way, a car enters when the ring is clear to its left. On signals, each approach has an entry light, a stop line on the ring just before it, and a pedestrian light on the exit. A vehicle held at an exit light can leave its tail across the ring, which is how the articulated buses blocked the Dumbrăvii direction on the morning described in the article.</p>
+  <p>The layout is a schematic. Each roundabout has one ring lane and one lane per approach, the real ones have more, and the Șaguna link is drawn shorter than it is. Traffic volumes and signal timings are assumptions, so read the result as a direction, never as a forecast. A single-lane ring has little room to store vehicles between stop lines, and that flatters give-way here.</p>
+  <p>Source: <a href="https://www.turnulsfatului.ro/2026/10/06/un-pic-de-haos-domnule-un-singur-semafor-de-giratoriu-a-pornit-marti-dimineata-tocmai-cel-unde-pietonii-erau-obligati-sa-se-amestece-printre-masini/">Turnul Sfatului, 6 October 2026</a>. The signals at Milea × Dumbrăvii ran for about two hours and were put back on flashing amber.</p>
+</div>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
