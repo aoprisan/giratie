@@ -1,3 +1,17 @@
+# Handoff notes – 7 Oct 2026 (Vissim layout)
+
+Branch `claude/sharp-franklin-3jlvv6`. The map and network now follow the city's Vissim image ("Fluxuri simultane") at true scale:
+- Every carriageway is a polyline traced from the image (`defs` in sim.ts, image px × 0.381 m/px); ring radius 16 m.
+- Every signal in the image is modelled and drawn the way the image draws it (coloured stop bars, pedestrian blocks):
+  8 stop lines per ring, 7 crossings including the two mid-block push-button crossings on Str. Andrei Șaguna.
+- Two right-turn bypasses (Coposu → Șaguna, signalised with the Coposu entry; Dumbrăvii → V. Milea, unsignalised).
+- Șaguna now feeds 250 veh/h into Ramada on its curved carriageway, as the image shows (OSM disagrees; see CLAUDE.md).
+
+Mean of 6 seeds, 20 min, pair plan, 70 s cycle (trip s / veh/h): all give-way 59 / 1,786; Milea only fixed 356 / 1,026,
+adaptive 142 / 1,424; both fixed 444 / 960, adaptive 202 / 1,598.
+
+Next: two-lane ring and approaches (the image draws them; the sim has one lane), which also brings lane-choice errors.
+
 # Handoff notes – 7 Oct 2026
 
 Branch `ccr-ce00a6d3-e0wxzz`. See `CLAUDE.md` for the model itself; this file is what to pick up next.

@@ -4,6 +4,10 @@ export type Mode = 'classic' | 'signal';
 export type Plan = 'pair' | 'seq';
 /** `fixed`: fixed-time plan. `adaptive`: detector-actuated greens with bus priority, like the Swarco system. */
 export type Ctrl = 'fixed' | 'adaptive';
+/** A point in metres (world) or pixels of the city's Vissim image (`defs`). Screen axes: x east, y south. */
+export type Pt = [number, number];
+/** Vehicle light: green, amber, red, or '' = unsignalised (give-way, flashing amber). */
+export type Light = 'g' | 'a' | 'r' | '';
 
 export interface Params {
   demand: number;
@@ -46,15 +50,19 @@ export interface Vehicle {
 export interface Stop {
   pos: number;
   arm: Arm;
-  /** `in`: entry stop line. `cross`: inbound side of the pedestrian crossing. `out`: outbound side of the crossing. */
+  /** `in`: entry stop line. `cross`: inbound side of a pedestrian crossing. `out`: outbound side of a crossing. */
   side: 'in' | 'cross' | 'out';
+  lane: Lane;
+  x: Crossing | null;
 }
 
 export interface Lane {
-  ax: number;
-  ay: number;
-  bx: number;
-  by: number;
+  /** Centreline of the simulated lane in the direction of travel (metres); `cum` = arc length at each point. */
+  pts: Pt[];
+  cum: number[];
+  /** Lanes drawn for this carriageway (the simulated one is the rightmost). */
+  nl: number;
+  /** Simulated length; links are longer than drawn. */
   L: number;
   veh: Vehicle[];
   stops: Stop[];
@@ -62,17 +70,42 @@ export interface Lane {
   fromArm: Arm | null;
   src: Arm | null;
   sink: Arm | null;
+  /** Right-turn bypass leaving this lane at `at` for `to` (vehicles exiting there skip the ring). */
+  slip: {at: number; to: Arm; lane: Lane} | null;
+  /** Bypass lane: joins `lane` at `pos` at its end. */
+  merge: {lane: Lane; pos: number} | null;
+}
+
+/** Signalised pedestrian crossing. Near the ring it runs with its arm's signal group; mid-block (`mid`) it has
+ *  its own push-button controller. */
+export interface Crossing {
+  arm: Arm;
+  /** Kerb-to-kerb ends in metres; pedestrians walk from a to b (dir 1) or back. */
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  mid: boolean;
+  stops: Stop[];
+  /** Give-way: pedestrians on the zebra until this time. */
+  pedUntil: number;
+  pedWait: number;
+  /** Adaptive control: this crossing's window is open until this time. */
+  pedOpen: number;
+  peds: Ped[];
+  /** Mid-block controller: 0 vehicle green, 1 amber, 2 all-red, 3 walk, 4 clearance; `ph0` = phase start. */
+  ph: number;
+  ph0: number;
+  car: Light;
+  walk: boolean;
 }
 
 export interface Arm {
   rb: Roundabout;
   idx: number;
-  ang: number;
-  ux: number;
-  uy: number;
-  px: number;
-  py: number;
   name: string | null;
+  /** Label box, top-left corner in metres (from the Vissim image). */
+  lab: Pt | null;
   flow: number;
   out: number;
   g: number;
@@ -80,25 +113,15 @@ export interface Arm {
   sEntry: number;
   sExit: number;
   sStop: number;
-  ex: number;
-  ey: number;
-  xx: number;
-  xy: number;
-  pedUntil: number;
-  pedWait: number;
-  /** Signals: the exit crossing's pedestrian window is open until this time (adaptive control). */
-  pedOpen: number;
   len: number;
-  /** Signalised pedestrian crossing, centre in metres from the ring centreline; 0 = none (link arms). */
-  xw: number;
-  peds: Ped[];
+  xs: Crossing[];
+  /** The crossing timed with this arm's signal group, if any. */
+  xn: Crossing | null;
   backlog: Pending[];
   sg: Signal | null;
   inLane: Lane;
   outLane: Lane;
   inStop: Stop;
-  outStop: Stop;
-  crossStop: Stop | null;
   w: number;
   f0: number;
   fd: number;
@@ -109,8 +132,6 @@ export interface Roundabout {
   name: string;
   x: number;
   y: number;
-  /** Where the right end of the drawn name sits, relative to the centre (metres), clear of the arms. */
-  nameAt: [number, number];
   idx: number;
   mode: Mode;
   veh: Vehicle[];
@@ -152,66 +173,106 @@ export interface Stats {
 }
 
 export interface Constants {
+  /** Ring centreline radius. */
   RR: number;
+  /** Drawn lane width. */
   LW: number;
-  DEL: number;
   C: number;
+  /** Entry stop line, metres before the ring. */
   ZD: number;
-  ARM: number;
   DT: number;
+  /** Metres per pixel of the Vissim image; the map frame is its 1920 × 1080 px. */
+  M: number;
 }
 
 export interface Sim {
   rbs: Roundabout[];
   lanes: Lane[];
   arms: Arm[];
+  crossings: Crossing[];
   step(): void;
   stats(): Stats;
   readonly t: number;
   K: Constants;
 }
 
+interface XDef {
+  /** Kerb-to-kerb ends of the zebra, image px. */
+  p: [number, number, number, number];
+  /** Carriageways it crosses (default both). */
+  on?: 'in' | 'out';
+  mid?: boolean;
+}
+
 interface ArmDef {
-  a: number;
   name?: string;
   flow?: number;
   out?: number;
   g?: number;
   link?: number;
   len?: number;
-  xw?: number;
+  /** Carriageway centrelines in image px, in the direction of travel: `i` towards the ring, `o` away from it
+   *  (a link's `o` runs to the next ring). `ni`/`no`: lanes drawn (default 1). */
+  i?: Pt[];
+  o: Pt[];
+  ni?: number;
+  no?: number;
+  xs?: XDef[];
+  /** Right-turn bypass to arm `to`, image px from where it leaves this arm's entry to where it joins `to`'s exit.
+   *  `stop`: where the arm's entry light also holds the bypass. */
+  slip?: {to: number; p: Pt[]; stop?: Pt};
+  lab?: Pt;
 }
 
 interface RbDef {
   key: string;
   name: string;
-  nameAt?: [number, number];
-  x: number;
-  y: number;
+  c: Pt;
   arms: ArmDef[];
 }
 
-// Arms are listed in the order the city named them on 2 Oct 2026. Screen angles: 0 = east, 90 = south.
-// Geometry from OpenStreetMap (7 Oct 2026, ring ways 190921167, 190919313). Each roundabout is rotated
-// as a whole so its links lie on the drawn corridor, which keeps the real angular spacing of its arms.
-// Real bearings (screen angles, unrotated): ramada: link to milea 61, Cioran 145, Șaguna 233, Coposu 315 (rotated -57,
-// link and Șaguna forced to 0/180); milea: V. Milea 35, Dumbrăvii 99, link 240, Noica 280 (rotated -60).
-// Only the two roundabouts in the city's Vissim model are simulated. Str. Andrei Șaguna is one-way westbound, so at
-// Ramada it is an exit only (`flow` 0); `out` weights it as a destination (the old Morilor arms' 900 veh/h combined).
-// `len` is the ring-to-ring route length in the direction leaving the arm.
-// `xw`: signalised pedestrian crossing, metres from the ring centreline, from the city's Vissim model
-// ("Fluxuri simultane", sibiu100.ro, 6 Oct 2026; scale from the OSM ring centres). The link has no crossing near the rings.
+// Geometry traced from the city's Vissim model ("Fluxuri simultane", sibiu100.ro, 6 Oct 2026), a 1920 × 1080 px
+// image at M m/px (scale from the OSM ring centres, 7 Oct 2026). The image is turned so the Piața Unirii link
+// runs left to right. Arms are listed in the order the city named them on 2 Oct 2026.
+// Each arm has its own entry and exit carriageways as the model draws them; where they share a road they run
+// side by side. Two right-turn bypasses: Coposu → Șaguna at Ramada (held by the Coposu entry light, as the model
+// draws its stop line across it), Calea Dumbrăvii → V. Milea at Milea (unsignalised).
+// Str. Andrei Șaguna: the model brings traffic in on the curved carriageway (two signalised crossings, mid-block)
+// and takes it out on the straight one, which the model cuts short, as it does a stub beside Calea Dumbrăvii.
+// `len` is the ring-to-ring route length of a link in the direction leaving the arm.
+const M = 0.381;
 const defs: RbDef[] = [
   // Șos. Alba Iulia × Str. Morilor × Str. Turismului: named by the city but not in its Vissim model, so left out.
-  // {key: 'morilor', name: 'Alba Iulia · Morilor · Turismului', x: 0, y: 0, nameAt: [150, 48], arms: [
-  //   {a: 0, link: 1, name: '→ Banatului · Victoriei', len: 874}, {a: 303, name: 'Str. Morilor', flow: 220, g: 1, xw: 17},
-  //   {a: 146, name: 'Șos. Alba Iulia', flow: 520, g: 0, xw: 26}, {a: 227, name: 'Str. Turismului', flow: 160, g: 1, xw: 15}]},
-  {key: 'ramada', name: 'Piața Unirii · Ramada', x: 0, y: 0, arms: [
-    {a: 0, link: 1, name: '→ Piața Unirii', len: 195}, {a: 258, name: 'Bd. C. Coposu', flow: 280, g: 1, xw: 45},
-    {a: 180, name: 'Str. Andrei Șaguna', flow: 0, out: 900, g: 0}, {a: 88, name: 'Str. Emil Cioran', flow: 300, g: 1, xw: 16}]},
-  {key: 'milea', name: 'V. Milea · Dumbrăvii (blocul-plombă)', x: 220, y: 0, nameAt: [-21, 48], arms: [
-    {a: 335, name: 'Bd. Vasile Milea', flow: 470, g: 0, xw: 70}, {a: 220, name: 'Str. C. Noica', flow: 120, g: 1, xw: 12},
-    {a: 180, link: 0, name: '← Piața Unirii', len: 195}, {a: 39, name: 'Calea Dumbrăvii', flow: 420, g: 1, xw: 43}]},
+  {key: 'ramada', name: 'Piața Unirii · Ramada', c: [781, 512], arms: [
+    {link: 1, name: 'Piața Unirii', len: 195, no: 2, lab: [905, 385],
+      o: [[826, 534], [900, 536], [1100, 538], [1250, 539], [1300, 541]]},
+    {name: 'Bd. Corneliu Coposu', flow: 280, g: 1, ni: 2, no: 2, lab: [485, 135],
+      i: [[754, 10], [755, 380], [752, 420], [756, 455]], o: [[786, 462], [784, 420], [773, 380], [771, 10]],
+      xs: [{p: [746, 354, 786, 354]}],
+      slip: {to: 2, p: [[749, 395], [744, 430], [738, 460], [728, 482], [712, 493], [690, 497]], stop: [741, 453]}},
+    {name: 'Str. Andrei Șaguna', flow: 250, out: 900, g: 0, ni: 2, no: 2, lab: [100, 510],
+      i: [[0, 1000], [150, 975], [300, 955], [330, 948], [355, 930], [372, 900], [380, 850], [382, 800], [388, 740],
+        [393, 700], [399, 640], [410, 612], [420, 585], [450, 553], [500, 537], [600, 534], [700, 536], [725, 537]],
+      o: [[735, 496], [700, 496], [620, 499], [560, 509], [505, 521]],
+      xs: [{p: [390, 613, 428, 612], on: 'in', mid: true}, {p: [316, 936, 321, 962], on: 'in', mid: true}]},
+    {name: 'Str. Emil Cioran', flow: 300, g: 1, lab: [495, 750],
+      i: [[777, 842], [778, 700], [785, 640], [788, 600], [791, 565]], o: [[762, 560], [758, 600], [758, 640], [764, 700], [766, 842]],
+      xs: [{p: [755, 594, 800, 596]}]}]},
+  {key: 'milea', name: 'V. Milea · Dumbrăvii (blocul-plombă)', c: [1346, 525], arms: [
+    {name: 'Bd. Vasile Milea', flow: 470, g: 0, ni: 2, no: 2, lab: [1450, 325],
+      i: [[1851, 274], [1556, 433], [1500, 462], [1450, 481], [1398, 496]], o: [[1394, 522], [1450, 503], [1530, 468], [1566, 449], [1859, 290]],
+      xs: [{p: [1537, 430, 1562, 462]}]},
+    {name: 'Str. Constantin Noica', flow: 120, g: 1, lab: [1170, 165],
+      i: [[1348, 228], [1336, 280], [1321, 350], [1308, 400], [1301, 440], [1296, 470], [1297, 490]],
+      o: [[1306, 488], [1304, 470], [1309, 440], [1316, 400], [1329, 350], [1344, 280], [1356, 228]],
+      xs: [{p: [1288, 477, 1309, 476]}]},
+    {link: 0, name: 'Piața Unirii', len: 195, no: 2,
+      o: [[1296, 503], [1250, 498], [1100, 499], [1000, 500], [900, 499], [836, 497]]},
+    {name: 'Calea Dumbrăvii', flow: 420, g: 1, ni: 2, lab: [1405, 665],
+      i: [[1812, 833], [1630, 707], [1520, 630], [1480, 603], [1450, 584], [1420, 563], [1398, 549]],
+      o: [[1352, 567], [1382, 580], [1412, 598], [1440, 613], [1475, 628], [1512, 641], [1622, 718], [1804, 844]],
+      xs: [{p: [1480, 590, 1454, 630]}],
+      slip: {to: 0, p: [[1452, 586], [1440, 562], [1437, 540], [1444, 522], [1460, 505], [1478, 491]]}}]},
 ];
 
 /** Mulberry32: small seedable PRNG returning floats in [0, 1). */
@@ -226,51 +287,115 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
+/** Cumulative arc length at each point of a polyline. */
+export function cumLen(pts: Pt[]): number[] {
+  const c = [0];
+  for (let i = 1; i < pts.length; i++) c.push(c[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  return c;
+}
+
+/** Point and unit direction at arc length `d` along a polyline (clamped to its ends). */
+export function along(pts: Pt[], cum: number[], d: number): {x: number; y: number; dx: number; dy: number} {
+  let i = 1;
+  while (i < pts.length - 1 && cum[i] < d) i++;
+  const [ax, ay] = pts[i - 1], [bx, by] = pts[i], seg = cum[i] - cum[i - 1] || 1, f = Math.min(1, Math.max(0, (d - cum[i - 1]) / seg));
+  return {x: ax + (bx - ax) * f, y: ay + (by - ay) * f, dx: (bx - ax) / seg, dy: (by - ay) / seg};
+}
+
+/** Polyline shifted `d` to the right of its direction of travel (negative = left). */
+export function offset(pts: Pt[], d: number): Pt[] {
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [p[0] - (b[1] - a[1]) / l * d, p[1] + (b[0] - a[0]) / l * d];
+  });
+}
+
+/** Arc length of the point of a polyline nearest to (x, y). */
+function project(pts: Pt[], cum: number[], x: number, y: number): number {
+  let best = Infinity, at = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i], dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+    const f = Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy) / l2)), qx = ax + dx * f - x, qy = ay + dy * f - y;
+    if (qx * qx + qy * qy < best) { best = qx * qx + qy * qy; at = cum[i - 1] + f * Math.sqrt(l2); }
+  }
+  return at;
+}
+
 export function createSim(P: Params, rng: () => number = Math.random): Sim {
-  const TAU = Math.PI * 2, RR = 26, LW = 3.2, DEL = Math.asin(LW / RR), C = TAU * RR, ZD = 10, ARM = 110, DT = 0.1;
+  const RR = 16, LW = 3.4, C = Math.PI * 2 * RR, ZD = 8, DT = 0.1;
   const mod = (a: number, n: number) => ((a % n) + n) % n;
   let t = 0, n = 0;
-  const lanes: Lane[] = [], done: {t: number; tt: number}[] = [];
-  const rbs: Roundabout[] = defs.map((d, i) => ({key: d.key, name: d.name, x: d.x, y: d.y, nameAt: d.nameAt ?? [-21, -35], idx: i, mode: 'classic', veh: [], arms: [],
+  const lanes: Lane[] = [], crossings: Crossing[] = [], done: {t: number; tt: number}[] = [];
+  const W = (q: Pt[]): Pt[] => q.map(([x, y]) => [x * M, y * M]);
+  const rbs: Roundabout[] = defs.map((d, i) => ({key: d.key, name: d.name, x: d.c[0] * M, y: d.c[1] * M, idx: i, mode: 'classic', veh: [], arms: [],
     ctl: {on: false, cur: 0, next: 0, start: 0, clr: -1, seen: 0}}));
-  rbs.forEach((rb, i) => {
-    defs[i].arms.forEach((d, k) => {
-      const ang = d.a * Math.PI / 180, ux = Math.cos(ang), uy = Math.sin(ang);
-      const sEntry = mod(-(ang - DEL) * RR, C);
-      // Lanes, stops and phase weights are filled in below.
-      rb.arms.push({rb, idx: k, ang, ux, uy, px: uy, py: -ux, name: d.name ?? null, flow: d.flow ?? 0, out: d.out ?? d.flow ?? 0, g: d.g ?? 0, link: d.link ?? -1,
-        sEntry, sExit: mod(-(ang + DEL) * RR, C), sStop: mod(sEntry - 6, C),
-        ex: rb.x + RR * Math.cos(ang - DEL), ey: rb.y + RR * Math.sin(ang - DEL), xx: rb.x + RR * Math.cos(ang + DEL), xy: rb.y + RR * Math.sin(ang + DEL),
-        pedUntil: -1, pedWait: 0, pedOpen: -1, len: d.len ?? 0, xw: d.link === undefined ? d.xw ?? 0 : 0, peds: [], backlog: [], sg: null, w: 0, f0: 0, fd: 0} as unknown as Arm);
-    });
-    rb.arms.forEach(a => { if (a.link > rb.idx) rb.east = a; if (a.link >= 0 && a.link < rb.idx) rb.west = a; });
-  });
-  function mk(ax: number, ay: number, bx: number, by: number): Lane {
-    const l: Lane = {ax, ay, bx, by, L: Math.hypot(bx - ax, by - ay), veh: [], stops: [], endArm: null, fromArm: null, src: null, sink: null};
+  /** The point on `rb`'s ring centreline in the direction of `p`. */
+  const onRing = (rb: Roundabout, p: Pt): Pt => { const a = Math.atan2(p[1] - rb.y, p[0] - rb.x); return [rb.x + RR * Math.cos(a), rb.y + RR * Math.sin(a)]; };
+  const sAt = (rb: Roundabout, p: Pt) => mod(-Math.atan2(p[1] - rb.y, p[0] - rb.x) * RR, C);
+  // The simulated lane is the rightmost of a carriageway's `nl` drawn lanes.
+  const lanePts = (q: Pt[], nl: number) => offset(W(q), (nl - 1) * LW / 2);
+  function mk(pts: Pt[], nl: number): Lane {
+    const cum = cumLen(pts);
+    const l: Lane = {pts, cum, nl, L: cum[cum.length - 1], veh: [], stops: [], endArm: null, fromArm: null, src: null, sink: null, slip: null, merge: null};
     lanes.push(l);
     return l;
   }
-  const fd = RR * Math.cos(DEL) + ARM;
-  rbs.forEach(rb => rb.arms.forEach(a => {
-    if (a.link < 0) {
-      a.inLane = mk(rb.x + a.ux * fd + a.px * LW, rb.y + a.uy * fd + a.py * LW, a.ex, a.ey); a.inLane.src = a;
-      a.outLane = mk(a.xx, a.xy, rb.x + a.ux * fd - a.px * LW, rb.y + a.uy * fd - a.py * LW); a.outLane.sink = a;
+  rbs.forEach((rb, i) => {
+    defs[i].arms.forEach((d, k) => {
+      // Lanes, stops and phase weights are filled in below.
+      rb.arms.push({rb, idx: k, name: d.name ?? null, lab: d.lab ? [d.lab[0] * M, d.lab[1] * M] : null, flow: d.flow ?? 0, out: d.out ?? d.flow ?? 0,
+        g: d.g ?? 0, link: d.link ?? -1, sEntry: 0, sExit: 0, sStop: 0, len: d.len ?? 0, xs: [], xn: null, backlog: [], sg: null, w: 0, f0: 0, fd: 0} as unknown as Arm);
+    });
+    rb.arms.forEach(a => { if (a.link > rb.idx) rb.east = a; if (a.link >= 0 && a.link < rb.idx) rb.west = a; });
+  });
+  rbs.forEach((rb, i) => rb.arms.forEach((a, k) => {
+    const d = defs[i].arms[k], o = lanePts(d.o, d.no ?? 1);
+    o.unshift(onRing(rb, o[0]));
+    if (a.link >= 0) {
+      const nb = rbs[a.link];
+      o.push(onRing(nb, o[o.length - 1]));
+      a.outLane = mk(o, d.no ?? 1);
+      // Real length; the UI compresses the middle of the drawn link.
+      a.outLane.L = Math.max(a.outLane.L, a.len);
+      nb.arms.find(b => b.link === rb.idx)!.inLane = a.outLane;
     } else {
-      const o = rbs[a.link].arms.find(b => b.link === rb.idx)!;
-      const l = mk(a.xx, a.xy, o.ex, o.ey); a.outLane = l; o.inLane = l;
-      // Real length; the UI draws the link compressed between the two rings.
-      l.L = Math.max(l.L, a.len);
+      const ip = lanePts(d.i!, d.ni ?? 1);
+      ip.push(onRing(rb, ip[ip.length - 1]));
+      a.inLane = mk(ip, d.ni ?? 1); a.inLane.src = a;
+      a.outLane = mk(o, d.no ?? 1); a.outLane.sink = a;
     }
   }));
   const arms: Arm[] = [];
   rbs.forEach(rb => rb.arms.forEach(a => arms.push(a)));
   arms.forEach(a => {
+    const rb = a.rb, d = defs[rb.idx].arms[a.idx];
     a.inLane.endArm = a; a.outLane.fromArm = a;
-    a.inStop = {pos: a.inLane.L - ZD, arm: a, side: 'in'}; a.inLane.stops.push(a.inStop);
-    // Crossing 4 m wide centred `xw` from the ring: exits hold just before it, arrivals just upstream of it.
-    a.outStop = {pos: Math.max(0.5, a.xw - 2.5), arm: a, side: 'out'}; a.outLane.stops.push(a.outStop);
-    a.crossStop = a.xw ? {pos: a.inLane.L - (a.xw + 2.5), arm: a, side: 'cross'} : null;
-    if (a.crossStop) a.inLane.stops.push(a.crossStop);
+    a.sEntry = sAt(rb, a.inLane.pts[a.inLane.pts.length - 1]); a.sExit = sAt(rb, a.outLane.pts[0]);
+    // Ring stop line 6 m upstream of the entry, so cars queued at it do not block a green entry.
+    a.sStop = mod(a.sEntry - 6, C);
+    a.inStop = {pos: a.inLane.L - ZD, arm: a, side: 'in', lane: a.inLane, x: null}; a.inLane.stops.push(a.inStop);
+    for (const xd of d.xs ?? []) {
+      const [ax, ay, bx, by] = xd.p.map(v => v * M);
+      const x: Crossing = {arm: a, ax, ay, bx, by, mid: !!xd.mid, stops: [], pedUntil: -1, pedWait: 0, pedOpen: -1, peds: [], ph: 0, ph0: 0, car: '', walk: false};
+      // A 4 m zebra: traffic holds just upstream of it, in both directions unless it crosses one carriageway only.
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      for (const [l, side] of [[a.inLane, 'cross'], [a.outLane, 'out']] as [Lane, 'cross' | 'out'][]) {
+        if (xd.on && xd.on !== (side === 'cross' ? 'in' : 'out')) continue;
+        const st: Stop = {pos: Math.max(0.5, project(l.pts, l.cum, mx, my) - 2.5), arm: a, side, lane: l, x};
+        l.stops.push(st); x.stops.push(st);
+      }
+      a.xs.push(x); crossings.push(x);
+      if (!x.mid && !a.xn) a.xn = x;
+    }
+  });
+  arms.forEach(a => {
+    const d = defs[a.rb.idx].arms[a.idx];
+    if (!d.slip) return;
+    const to = a.rb.arms[d.slip.to], l = mk(W(d.slip.p), 1), [sx, sy] = l.pts[0], [ex, ey] = l.pts[l.pts.length - 1];
+    a.inLane.slip = {at: project(a.inLane.pts, a.inLane.cum, sx, sy), to, lane: l};
+    l.merge = {lane: to.outLane, pos: project(to.outLane.pts, to.outLane.cum, ex, ey)};
+    if (d.slip.stop) l.stops.push({pos: project(l.pts, l.cum, d.slip.stop[0] * M, d.slip.stop[1] * M), arm: a, side: 'in', lane: l, x: null});
   });
   const sinks = arms.filter(a => a.link < 0);
   rbs.forEach(rb => {
@@ -284,6 +409,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
   const GMIN = 7, GAP = 2.5, DET = 30, CALL = 60, BUSD = 120, CLR = 4;
   const nGroups = (rb: Roundabout) => P.plan === 'seq' ? rb.arms.length : 2;
   const grp = (a: Arm) => P.plan === 'seq' ? a.idx : a.g;
+  const pedWait = (a: Arm) => a.xn ? a.xn.pedWait : 0;
   function gmax(rb: Roundabout, gi: number): number {
     if (P.plan === 'seq') return Math.max(GMIN, rb.arms[gi].fd * P.cycle - CLR);
     return Math.max(GMIN, P.cycle * (gi ? 0.45 : 0.55) - CLR);
@@ -302,7 +428,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     c.cur %= n;
     if (c.clr >= 0) {
       if (t - c.clr < CLR) return;
-      for (const a of rb.arms) if (grp(a) === c.cur && a.pedWait > 0) a.pedOpen = t + 8;
+      for (const a of rb.arms) if (grp(a) === c.cur && a.xn && a.xn.pedWait > 0) a.xn.pedOpen = t + 8;
       c.cur = c.next % n; c.start = t; c.clr = -1; c.seen = t;
       return;
     }
@@ -317,7 +443,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     }
     if (busNx >= 0 && !busHere) nx = busNx;
     // No conflicting demand: rest on green, except to give waiting pedestrians their window.
-    if (nx < 0) { if (g >= gmax(rb, c.cur) && mine.some(a => a.pedWait > 0)) nx = (c.cur + 1) % n; else return; }
+    if (nx < 0) { if (g >= gmax(rb, c.cur) && mine.some(a => pedWait(a) > 0)) nx = (c.cur + 1) % n; else return; }
     let occ = 0; for (const o of rb.veh) occ += o.len + 2;
     const end = g >= gmax(rb, c.cur) + (busHere ? 10 : 0) ||
       (g >= GMIN && (busNx >= 0 && !busHere || occ > C * 0.5 || (t - c.seen > GAP && !busHere)));
@@ -328,7 +454,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     if (a.rb.mode !== 'signal') return null;
     const c = a.rb.ctl;
     if (c.on) {
-      const ped = t < a.pedOpen;
+      const ped = !!a.xn && t < a.xn.pedOpen;
       if (grp(a) !== c.cur) return {entry: 'r', ring: false, ped};
       if (c.clr < 0) return {entry: 'g', ring: true, ped};
       const e = t - c.clr;
@@ -340,11 +466,20 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     const tt = mod(t - st, T);
     return {entry: tt < dur - 4 ? 'g' : tt < dur - 2 ? 'a' : 'r', ring: tt < dur - 1, ped: tt >= dur && tt < dur + 8};
   }
+  /** Lights at a crossing. Near the ring: red for traffic during the arm's pedestrian window. Mid-block: a push button
+   *  calls amber (3 s), all-red (1 s), walk (8 s), clearance (3 s), after at least MIDG s of vehicle green. */
+  function crossing(x: Crossing): void {
+    if (x.arm.rb.mode !== 'signal') { x.car = ''; x.walk = false; x.ph = 0; return; }
+    if (!x.mid) { const s = x.arm.sg!; x.walk = s.ped; x.car = s.ped ? 'r' : 'g'; return; }
+    const e = t - x.ph0, MIDG = P.ctrl === 'fixed' ? Math.max(20, P.cycle - 15) : 20;
+    const go = (p: number) => { x.ph = p; x.ph0 = t; };
+    if (x.ph === 0 ? x.pedWait > 0 && e >= MIDG : e >= [0, 3, 1, 8, 3][x.ph]) go((x.ph + 1) % 5);
+    x.car = x.ph === 0 ? 'g' : x.ph === 1 ? 'a' : 'r'; x.walk = x.ph === 3;
+  }
   function stopBlocked(st: Stop): boolean {
-    const a = st.arm, s = a.sg;
-    if (st.side === 'in') return !!s && s.entry !== 'g';
-    if (!a.xw) return false;
-    return s ? s.ped : t < a.pedUntil;
+    if (st.side === 'in') { const s = st.arm.sg; return !!s && s.entry !== 'g'; }
+    const x = st.x!;
+    return x.car ? x.car !== 'g' : t < x.pedUntil;
   }
   function pickDest(a: Arm): Arm {
     let tot = 0; for (const s of sinks) if (s !== a) tot += s.out;
@@ -378,6 +513,14 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     }
     return true;
   }
+  /** May a vehicle leaving a bypass join `m.lane` at `m.pos` now? */
+  function canMerge(m: {lane: Lane; pos: number}, v: Vehicle): boolean {
+    for (const o of m.lane.veh) {
+      if (o.pos >= m.pos) { if (o.pos - o.len < m.pos + 1) return false; }
+      else if (m.pos - v.len - o.pos < 2 + o.v * 1.2) return false;
+    }
+    return true;
+  }
   // Intelligent Driver Model.
   const AM = 1.8, BM = 2.5, TH = 1.1, SQ = 2 * Math.sqrt(AM * BM);
   function term(v: number, gap: number, dv: number, s0: number): number {
@@ -394,18 +537,21 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
   function step(): void {
     t += DT; n++;
     for (const rb of rbs) control(rb);
+    for (const a of arms) a.sg = sig(a);
+    for (const x of crossings) {
+      crossing(x);
+      if (rng() < P.ped / 3600 * DT) {
+        if (x.car) x.pedWait++;
+        else { x.pedUntil = t + 6.5; x.peds.push({t0: t, dir: rng() < .5 ? 1 : -1}); }
+      }
+      if (x.walk && x.pedWait > 0) {
+        for (let k = 0; k < Math.min(x.pedWait, 6); k++) x.peds.push({t0: t + k * 0.25, dir: k % 2 ? 1 : -1});
+        x.pedWait = 0;
+      }
+      while (x.peds.length && x.peds[0].t0 < t - 7.5) x.peds.shift();
+    }
     for (const a of arms) {
-      a.sg = sig(a);
-      if (a.xw && rng() < P.ped / 3600 * DT) {
-        if (a.sg) a.pedWait++;
-        else { a.pedUntil = t + 6.5; a.peds.push({t0: t, dir: rng() < .5 ? 1 : -1}); }
-      }
-      if (a.sg && a.sg.ped && a.pedWait > 0) {
-        for (let k = 0; k < Math.min(a.pedWait, 6); k++) a.peds.push({t0: t + k * 0.25, dir: k % 2 ? 1 : -1});
-        a.pedWait = 0;
-      }
-      while (a.peds.length && a.peds[0].t0 < t - 7.5) a.peds.shift();
-      if (a.link < 0) {
+      if (a.link < 0 && a.flow) {
         if (rng() < a.flow * P.demand / 3600 * DT) a.backlog.push({t, dest: pickDest(a)});
         if (a.backlog.length) {
           const l = a.inLane, tl = l.veh[l.veh.length - 1];
@@ -428,9 +574,10 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
         }
         const ol = ex.outLane, tail = ol.veh[ol.veh.length - 1];
         if (tail) { const gap = dEx + tail.pos - tail.len; inter = Math.max(inter, term(v.v, gap, v.v - tail.v, 2)); hard = Math.min(hard, gap); }
-        if (stopBlocked(ex.outStop)) inter = Math.max(inter, term(v.v, dEx + ex.outStop.pos, v.v, 0.6));
+        for (const st of ol.stops) if (stopBlocked(st)) inter = Math.max(inter, term(v.v, dEx + st.pos, v.v, 0.6));
         for (const a of rb.arms) {
-          if (a.sg && a.sg.ring) { const d = mod(a.sStop - v.s, C); if (d < dEx) inter = Math.max(inter, term(v.v, d, v.v, 0.6)); }
+          // Ring stop lines; a vehicle leaving at that arm has turned off before it.
+          if (a !== ex && a.sg && a.sg.ring) { const d = mod(a.sStop - v.s, C); if (d < dEx) inter = Math.max(inter, term(v.v, d, v.v, 0.6)); }
           if (a !== ex) {
             // Exit spillback: a vehicle on another exit lane whose tail is still in the ring blocks it.
             const tl = a.outLane.veh[a.outLane.veh.length - 1];
@@ -453,25 +600,42 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
       for (let i = 0; i < arr.length; i++) {
         const v = arr[i];
         if (v.step === n) continue; v.step = n;
+        // Bound for this lane's bypass and not yet at its start: only what lies before the split matters.
+        const slip = l.slip && v.pos < l.slip.at && exitFor(l.endArm!.rb, v.dest) === l.slip.to ? l.slip : null;
         let inter = 0, hard = Infinity;
-        if (i > 0) { const ld = arr[i - 1]; if (ld.lane === l) { const gap = ld.pos - ld.len - v.pos; inter = term(v.v, gap, v.v - ld.v, 2); hard = gap; } }
-        for (const st of l.stops) if (st.pos > v.pos - 0.2 && stopBlocked(st)) inter = Math.max(inter, term(v.v, st.pos - v.pos, v.v, 0.6));
+        if (i > 0) {
+          const ld = arr[i - 1];
+          if (ld.lane === l && !(slip && ld.pos - ld.len > slip.at)) { const gap = ld.pos - ld.len - v.pos; inter = term(v.v, gap, v.v - ld.v, 2); hard = gap; }
+        }
+        for (const st of l.stops) if (st.pos > v.pos - 0.2 && !(slip && st.pos > slip.at) && stopBlocked(st)) inter = Math.max(inter, term(v.v, st.pos - v.pos, v.v, 0.6));
         const d = l.L - v.pos;
-        let enter = false, v0 = 12.5;
+        let enter = false, v0 = l.merge ? 8 : 12.5;
         if (l.endArm) {
           v0 = 7.5 + 5 * Math.min(1, Math.max(0, (d - 10) / 50));
-          if (l.veh[0] === v && d < 45) {
+          if (slip) v0 = 12.5;
+          else if (l.veh[0] === v && d < 45) {
             enter = canEnter(l.endArm, v.len, exitFor(l.endArm.rb, v.dest));
             if (!enter) { inter = Math.max(inter, term(v.v, d, v.v, 0.8)); hard = Math.min(hard, d + 0.25); }
           } else if (l.veh[0] !== v) hard = Math.min(hard, d + 0.25);
+        } else if (l.merge && l.veh[0] === v && d < 30) {
+          enter = canMerge(l.merge, v);
+          if (!enter) { inter = Math.max(inter, term(v.v, d, v.v, 0.8)); hard = Math.min(hard, d + 0.25); }
         }
         v.pos += advance(v, v0, inter, hard);
-        if (v.pos >= l.L) {
+        if (slip && v.pos >= slip.at) {
+          l.veh.splice(l.veh.indexOf(v), 1); v.lane = slip.lane; v.pos -= slip.at; slip.lane.veh.push(v);
+        } else if (v.pos >= l.L) {
           if (l.endArm) {
             if (enter && l.veh[0] === v) {
               l.veh.shift();
               const a = l.endArm, rb = a.rb;
               v.lane = null; v.rb = rb; v.s = mod(a.sEntry + v.pos - l.L, C); v.exit = exitFor(rb, v.dest); rb.veh.push(v);
+            } else v.pos = l.L - 0.05;
+          } else if (l.merge) {
+            if (enter && l.veh[0] === v) {
+              l.veh.shift();
+              const m = l.merge, k = m.lane.veh.findIndex(o => o.pos < m.pos);
+              v.lane = m.lane; v.pos = m.pos; m.lane.veh.splice(k < 0 ? m.lane.veh.length : k, 0, v);
             } else v.pos = l.L - 0.05;
           } else { l.veh.splice(l.veh.indexOf(v), 1); v.lane = null; done.push({t, tt: t - v.t0}); }
         }
@@ -488,7 +652,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
       let q = 0, wn = 0, wname = '';
       for (const a of rb.arms) {
         let c = a.backlog.length; backlog += a.backlog.length;
-        for (const v of a.inLane.veh) { total++; if (v.v < 1) { c++; stopped++; } }
+        for (const l of [a.inLane, ...(a.inLane.slip ? [a.inLane.slip.lane] : [])]) for (const v of l.veh) { total++; if (v.v < 1) { c++; stopped++; } }
         if (a.link < 0) for (const v of a.outLane.veh) { total++; if (v.v < 1) stopped++; }
         q += c;
         if (c > wn) { wn = c; wname = a.name || a.inLane.fromArm!.name || ''; }
@@ -500,5 +664,5 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     return {t, trip: done.length ? sum / done.length : 0, flow: done.length / Math.min(300, Math.max(t, 1)) * 3600, stopped, backlog, total, per};
   }
 
-  return {rbs, lanes, arms, step, stats, get t() { return t; }, K: {RR, LW, DEL, C, ZD, ARM, DT}};
+  return {rbs, lanes, arms, crossings, step, stats, get t() { return t; }, K: {RR, LW, C, ZD, DT, M}};
 }

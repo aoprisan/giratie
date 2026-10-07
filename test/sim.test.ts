@@ -13,13 +13,45 @@ describe('createSim', () => {
     const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'});
     expect(s.rbs.map(r => r.key)).toEqual(['ramada', 'milea']);
     expect(s.arms).toHaveLength(8);
-    // The link is modelled at its real (OSM) route length, longer than drawn; Șaguna is one-way westbound (exit only).
+    // The link is modelled at its real (OSM) route length; Șaguna comes in on its curved carriageway, as in the city's model.
     expect(s.rbs[1].west!.outLane.L).toBeGreaterThanOrEqual(195);
-    expect(s.rbs[0].arms.find(a => a.name === 'Str. Andrei Șaguna')!.flow).toBe(0);
+    expect(s.rbs[0].arms.find(a => a.name === 'Str. Andrei Șaguna')!.flow).toBeGreaterThan(0);
     for (const a of s.arms) {
       expect(a.inLane.endArm).toBe(a);
       expect(a.outLane.fromArm).toBe(a);
     }
+  });
+
+  it('has every signal in the city\'s model', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl: 'adaptive'});
+    // Per ring: an entry stop line and a ring stop line for each of its four arms.
+    for (const rb of s.rbs) expect(rb.arms.filter(a => a.inStop.side === 'in')).toHaveLength(4);
+    // Seven crossings: Coposu, Cioran, two mid-block on Șaguna, Noica, V. Milea, Dumbrăvii.
+    expect(s.crossings).toHaveLength(7);
+    const sag = s.rbs[0].arms.find(a => a.name === 'Str. Andrei Șaguna')!;
+    expect(sag.xs.map(x => x.mid)).toEqual([true, true]);
+    expect(sag.xs.every(x => x.stops.length === 1 && x.stops[0].lane === sag.inLane)).toBe(true);
+    // Both directions stop at the other five; the Coposu bypass is held by the Coposu entry light.
+    expect(s.crossings.filter(x => !x.mid).every(x => x.stops.length === 2)).toBe(true);
+    const cop = s.rbs[0].arms.find(a => a.name === 'Bd. Corneliu Coposu')!;
+    expect(cop.inLane.slip!.lane.stops.map(st => st.side)).toEqual(['in']);
+  });
+
+  it('runs traffic over both bypasses and the mid-block crossings', () => {
+    const s = createSim({demand: 1, cycle: 70, ped: 300, plan: 'pair', ctrl: 'adaptive'}, mulberry32(2));
+    s.rbs.forEach(r => r.mode = 'signal');
+    const slips = s.lanes.filter(l => l.merge), used = new Set<number>();
+    const sag = s.rbs[0].arms.find(a => a.name === 'Str. Andrei Șaguna')!;
+    let walks = 0;
+    for (let i = 0; i < 6000; i++) {
+      s.step();
+      slips.forEach((l, k) => { if (l.veh.length) used.add(k); });
+      for (const x of sag.xs) {
+        if (x.walk) { walks++; expect(x.car).toBe('r'); }
+      }
+    }
+    expect(used.size).toBe(2);
+    expect(walks).toBeGreaterThan(0);
   });
 
   it('is deterministic for a given seed', () => {
