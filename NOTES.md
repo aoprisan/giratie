@@ -25,19 +25,51 @@ Results, mean of 6 seeds, 20 simulated minutes:
 
 Give-way still wins, which matches the police verdict on 6 Oct. "Milea only" reproduces the reported queue back to Ramada.
 
-## Not verified: do this first on a machine with map access
-The cloud session could not reach openstreetmap.org, overpass-api.de or nominatim, so **arm angles are schematic and
-link lengths are guesses**. To fix this:
-1. Run an Overpass query for `way[junction=roundabout]` around Piața Unirii (≈45.79 N, 24.15 E) and along Șos. Alba Iulia.
-2. For each roundabout, take the centroid, the ring diameter (the model uses `RR = 26` m) and the bearing of each arm.
-   Convert bearings to screen angles (0 = east, 90 = south) and put them in `defs` in `src/sim.ts`.
-3. Measure the centroid-to-centroid distances for `len` on the two links.
-4. Check whether the Ramada arms really are Coposu to the north and Emil Cioran to the south. I am least sure of these.
+## Geometry verified against OpenStreetMap (7 Oct 2026, local session)
+Ring ways 191137276 (morilor), 190921167 (ramada), 190919313 (milea); Overpass needs a User-Agent header or it returns 406.
+- **Str. Andrei Șaguna is one-way westbound** (Ramada → Morilor, 686 m ring to ring). Eastbound traffic runs
+  Alba Iulia → Str. Dealului → Str. Banatului → Bd. Victoriei → Ramada (874 m). That is the "Bd. Victoriei" arm the
+  first session saw. Each link direction now has its own `len`.
+- Ramada ↔ Milea is 195 m, not 260.
+- Morilor: Alba Iulia and Turismului were swapped. Real order: link 343°, Alba Iulia 129°, Turismului 210°, Morilor 286°.
+- Ramada: Coposu to the NE (315°), Emil Cioran to the SW (145°), so the old guess was right. Milea: Noica is two-way
+  (entry via a short slip at 267°, exit at 294°).
+- Each ring is rotated as a whole so its links lie on the drawn corridor (Ramada's links are 172° apart and are forced to 180°).
+- Not adopted: OSM ring centrelines have an 11–15 m radius and 2 lanes; the model keeps `RR = 26` m and one lane.
+  Shrinking the ring without adding the second lane would understate capacity further, so do both together (next step 1).
+
+Results, mean of 6 seeds, 20 simulated minutes. "OSM" = verified geometry; "+ keep clear" adds the rule below.
+
+| Scenario | Old: trip (s) / veh/h | OSM | OSM + keep clear |
+|---|---|---|---|
+| All give-way | 137 / 2,390 | 135 / 2,358 | 137 / 2,356 |
+| Milea only, fixed | 383 / 1,260 | 370 / 1,282 | 404 / 1,262 |
+| Milea only, adaptive | 329 / 1,634 | 350 / 1,830 | 343 / 1,676 |
+| All three, fixed | 513 / 914 | 493 / 976 | 490 / 1,242 |
+| All three, adaptive | 414 / 1,692 | 400 / 1,600 | 447 / 1,486 |
+
+Give-way still wins by a wide margin, as the police found on 6 Oct.
+
+### Gridlock across Piața Unirii (fixed)
+With the 195 m link, the one-arm-at-a-time adaptive plan (`seq`), all three signalised, locked solid on every seed
+(560 veh/h). Each ring filled with vehicles for the other ring's full link. `canEnter` now applies a keep-clear rule.
+The test "does not gridlock two rings across the short Piața Unirii link" covers it and fails without the rule.
+That scenario is now 878 veh/h. Side effects: fixed-time improves (fewer locks); adaptive drops a little because a
+vehicle held by keep-clear sits on the detector and extends a green nobody can use. Adaptive still beats fixed on
+5 of 6 seeds (trip time), so the test now compares the mean of seeds 1–3, not seed 1 alone.
+
+### Ring radius experiment (not adopted)
+Real radius on the current one-lane ring (pair, 3 seeds, all three signalised): fixed 1,304 / 980 / 904 veh/h and
+adaptive 1,536 / 1,528 / 1,260 at RR 26 / 20 / 15 m; give-way about 2,320–2,370 throughout. A smaller ring widens the gap
+in favour of give-way. Change RR together with the two-lane ring.
+
+### Possible follow-up
+Adaptive control could ignore detector presence when the held vehicle is blocked by keep-clear (gap-out instead).
 
 ## Next modelling steps, by value
 1. **Two-lane rings and approaches with lane choice.** The city blamed >80% of the 6 Oct queues on wrong lane
    choice and lane changes inside the rings. The Milea → Dumbrăvii entry now has two marked lanes. This is the biggest gap.
-2. Intermediate signals on Șaguna (Banatului etc.): the project covers 17–18 signalised locations on the axis, and the
+2. Intermediate signals on the links (Banatului etc., on the eastbound route): the project covers 17–18 signalised locations on the axis, and the
    queue on 6 Oct ran ~1 km up Alba Iulia.
 3. Coordination between roundabouts. The city says it will change "how flows are coordinated between intersections".
 4. Special handling of the C. Noica entry and exit, which the city singled out for re-analysis.

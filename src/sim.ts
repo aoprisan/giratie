@@ -104,6 +104,8 @@ export interface Roundabout {
   name: string;
   x: number;
   y: number;
+  /** Where the right end of the drawn name sits, relative to the centre (metres), clear of the arms. */
+  nameAt: [number, number];
   idx: number;
   mode: Mode;
   veh: Vehicle[];
@@ -176,23 +178,30 @@ interface ArmDef {
 interface RbDef {
   key: string;
   name: string;
+  nameAt?: [number, number];
   x: number;
   y: number;
   arms: ArmDef[];
 }
 
 // Arms are listed in the order the city named them on 2 Oct 2026. Screen angles: 0 = east, 90 = south.
-// Link lengths (`len`, metres) are estimates; links are drawn compressed.
+// Geometry from OpenStreetMap (7 Oct 2026, ring ways 191137276, 190921167, 190919313). Each roundabout is rotated
+// as a whole so its links lie on the drawn corridor, which keeps the real angular spacing of its arms.
+// Real bearings (screen angles, unrotated): morilor: Alba Iulia 129, Turismului 210, Morilor 286, link 343 (rotated +17);
+// ramada: link to milea 61, Cioran 145, link to morilor 233, Coposu 315 (rotated -57, links forced to 0/180);
+// milea: V. Milea 35, Dumbrăvii 99, link 240, Noica 280 (rotated -60).
+// `len` is the ring-to-ring route length in the direction leaving the arm. Str. Andrei Șaguna is one-way westbound;
+// eastbound traffic runs Alba Iulia → Str. Dealului → Str. Banatului → Bd. Victoriei.
 const defs: RbDef[] = [
-  {key: 'morilor', name: 'Alba Iulia · Morilor · Turismului', x: 0, y: 0, arms: [
-    {a: 0, link: 1, name: 'Str. Andrei Șaguna', len: 900}, {a: 270, name: 'Str. Morilor', flow: 220, g: 1},
-    {a: 180, name: 'Șos. Alba Iulia', flow: 520, g: 0}, {a: 95, name: 'Str. Turismului', flow: 160, g: 1}]},
+  {key: 'morilor', name: 'Alba Iulia · Morilor · Turismului', x: 0, y: 0, nameAt: [150, 48], arms: [
+    {a: 0, link: 1, name: '→ Banatului · Victoriei', len: 874}, {a: 303, name: 'Str. Morilor', flow: 220, g: 1},
+    {a: 146, name: 'Șos. Alba Iulia', flow: 520, g: 0}, {a: 227, name: 'Str. Turismului', flow: 160, g: 1}]},
   {key: 'ramada', name: 'Piața Unirii · Ramada', x: 280, y: 0, arms: [
-    {a: 0, link: 2, name: 'Piața Unirii', len: 260}, {a: 270, name: 'Bd. C. Coposu', flow: 280, g: 1}, {a: 180, link: 0, len: 900},
-    {a: 108, name: 'Str. Emil Cioran', flow: 300, g: 1}]},
-  {key: 'milea', name: 'V. Milea · Dumbrăvii (blocul-plombă)', x: 500, y: 0, arms: [
-    {a: 0, name: 'Bd. Vasile Milea', flow: 470, g: 0}, {a: 270, name: 'Str. C. Noica', flow: 120, g: 1}, {a: 180, link: 1, len: 260},
-    {a: 82, name: 'Calea Dumbrăvii', flow: 420, g: 1}]},
+    {a: 0, link: 2, name: '→ Piața Unirii', len: 195}, {a: 258, name: 'Bd. C. Coposu', flow: 280, g: 1},
+    {a: 180, link: 0, name: '← Str. Andrei Șaguna', len: 686}, {a: 88, name: 'Str. Emil Cioran', flow: 300, g: 1}]},
+  {key: 'milea', name: 'V. Milea · Dumbrăvii (blocul-plombă)', x: 500, y: 0, nameAt: [-21, 48], arms: [
+    {a: 335, name: 'Bd. Vasile Milea', flow: 470, g: 0}, {a: 220, name: 'Str. C. Noica', flow: 120, g: 1},
+    {a: 180, link: 1, name: '← Piața Unirii', len: 195}, {a: 39, name: 'Calea Dumbrăvii', flow: 420, g: 1}]},
 ];
 
 /** Mulberry32: small seedable PRNG returning floats in [0, 1). */
@@ -212,7 +221,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
   const mod = (a: number, n: number) => ((a % n) + n) % n;
   let t = 0, n = 0;
   const lanes: Lane[] = [], done: {t: number; tt: number}[] = [];
-  const rbs: Roundabout[] = defs.map((d, i) => ({key: d.key, name: d.name, x: d.x, y: d.y, idx: i, mode: 'classic', veh: [], arms: [],
+  const rbs: Roundabout[] = defs.map((d, i) => ({key: d.key, name: d.name, x: d.x, y: d.y, nameAt: d.nameAt ?? [-21, -35], idx: i, mode: 'classic', veh: [], arms: [],
     ctl: {on: false, cur: 0, next: 0, start: 0, clr: -1, seen: 0}}));
   rbs.forEach((rb, i) => {
     defs[i].arms.forEach((d, k) => {
@@ -331,10 +340,19 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     return dest.rb === rb ? dest : (dest.rb.idx > rb.idx ? rb.east! : rb.west!);
   }
   /** May a vehicle of length `len` enter the ring from `a` now? Its body is laid along the ring upstream of the entry. */
-  function canEnter(a: Arm, len: number): boolean {
+  function canEnter(a: Arm, len: number, ex: Arm): boolean {
     const rb = a.rb, strict = !(a.sg && a.sg.ring);
     let occ = 6.5; for (const o of rb.veh) occ += o.len + 2;
     if (occ > C * (rb.mode === 'signal' ? 0.6 : 0.85)) return false;
+    // Keep clear: do not enter towards a link that has no room for this vehicle and the ring vehicles already
+    // heading there. Without it two rings on a short link can each fill with traffic for the other and lock for good.
+    if (ex.link >= 0) {
+      const ol = ex.outLane, tl = ol.veh[ol.veh.length - 1];
+      if (tl && tl.v < 2) {
+        let need = len + 2; for (const o of rb.veh) if (o.exit === ex) need += o.len + 2;
+        if (tl.pos - tl.len < need) return false;
+      }
+    }
     for (const o of rb.veh) {
       const d = mod(o.s - a.sEntry, C); if (d - o.len < 2.5) return false;
       const du = C - d;
@@ -427,7 +445,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
         if (l.endArm) {
           v0 = 7.5 + 5 * Math.min(1, Math.max(0, (d - 10) / 50));
           if (l.veh[0] === v && d < 45) {
-            enter = canEnter(l.endArm, v.len);
+            enter = canEnter(l.endArm, v.len, exitFor(l.endArm.rb, v.dest));
             if (!enter) { inter = Math.max(inter, term(v.v, d, v.v, 0.8)); hard = Math.min(hard, d + 0.25); }
           } else if (l.veh[0] !== v) hard = Math.min(hard, d + 0.25);
         }

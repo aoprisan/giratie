@@ -14,9 +14,10 @@ describe('createSim', () => {
     expect(s.rbs.map(r => r.key)).toEqual(['morilor', 'ramada', 'milea']);
     expect(s.arms).toHaveLength(12);
     expect(s.rbs[0].arms.map(a => a.name)).toContain('Str. Turismului');
-    // Links are modelled at their (estimated) real length, longer than drawn.
-    expect(s.rbs[1].west!.outLane.L).toBeGreaterThanOrEqual(900);
-    expect(s.rbs[2].west!.outLane.L).toBeGreaterThanOrEqual(260);
+    // Links are modelled at their real (OSM) route length, longer than drawn; Șaguna is one-way westbound.
+    expect(s.rbs[1].west!.outLane.L).toBeGreaterThanOrEqual(686);
+    expect(s.rbs[0].east!.outLane.L).toBeGreaterThanOrEqual(874);
+    expect(s.rbs[2].west!.outLane.L).toBeGreaterThanOrEqual(195);
     for (const a of s.arms) {
       expect(a.inLane.endArm).toBe(a);
       expect(a.outLane.fromArm).toBe(a);
@@ -46,8 +47,22 @@ describe('createSim', () => {
         expect(g.size).toBeLessThanOrEqual(1);
       }
     }
+    // Mean over seeds: on a single seed fixed-time can come out ahead.
     const all: Mode[] = ['signal', 'signal', 'signal'];
-    expect(run(all, 1, 12000, 'adaptive').stats().trip).toBeLessThan(run(all, 1, 12000, 'fixed').stats().trip);
+    const mean = (ctrl: Ctrl) => [1, 2, 3].reduce((m, seed) => m + run(all, seed, 12000, ctrl).stats().trip, 0) / 3;
+    expect(mean('adaptive')).toBeLessThan(mean('fixed'));
+  });
+
+  it('does not gridlock two rings across the short Piața Unirii link', () => {
+    // One arm at a time used to lock Ramada and Milea for good: each ring full of traffic for the other's full link.
+    const s = createSim({demand: 1, cycle: 100, ped: 120, plan: 'seq', ctrl: 'adaptive'}, mulberry32(3));
+    s.rbs.forEach(r => r.mode = 'signal');
+    for (let i = 0; i < 12000; i++) s.step();
+    const [, ramada, milea] = s.rbs;
+    const locked = [ramada, milea].every(rb => rb.veh.length > 0 && rb.veh.every(v => v.v < 0.1)) &&
+      [ramada.east!, milea.west!].every(a => a.outLane.veh.every(v => v.v < 0.1));
+    expect(locked).toBe(false);
+    expect(s.stats().flow).toBeGreaterThan(600);
   });
 
   it('never overlaps vehicles in a ring', () => {

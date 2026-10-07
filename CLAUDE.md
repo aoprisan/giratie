@@ -8,7 +8,9 @@ Real intersections, as named by the city (2 Oct 2026), west to east:
 - `morilor`: Șos. Alba Iulia × Str. Morilor × Str. Turismului.
 - `ramada`: Piața Unirii × Bd. Corneliu Coposu × Str. Andrei Șaguna × Str. Emil Cioran ("Ramada").
 - `milea`: Bd. Vasile Milea × Calea Dumbrăvii × Piața Unirii × Str. Constantin Noica ("blocul-plombă"; Noica runs under it).
-Links: Șaguna ≈ 900 m, Piața Unirii ≈ 260 m (estimates; map services were unreachable, so angles are schematic).
+Geometry checked against OpenStreetMap on 7 Oct 2026 (see `defs` in sim.ts): arm angles keep the real spacing, each ring rotated
+so its links lie on the drawn corridor. Links: Morilor → Ramada 874 m (via Dealului, Banatului, Bd. Victoriei),
+Ramada → Morilor 686 m (Str. Andrei Șaguna is one-way westbound), Ramada ↔ Milea 195 m.
 Calibration point: ~3,000 vehicles 7–9 am at Milea × Dumbrăvii; the model gives ~1,750 veh/h entering at 100% demand.
 
 ## Layout
@@ -37,18 +39,21 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
   Min green 7 s, gap-out after 2.5 s without a vehicle within 30 m of the stop line, max green = group's share of
   `P.cycle`, skip groups with no vehicle within 60 m, rest on green without conflicting demand, bus within 120 m
   calls/extends its green, green ends early when the ring is half full. 4 s clearance. Ped windows only on demand.
-- Links have a real length (`ArmDef.len`) longer than drawn; the UI scales lane positions by drawn/real length.
+- Links have a real length per direction (`ArmDef.len`, route leaving that arm) longer than drawn; the UI scales lane positions by drawn/real length.
 - `canEnter(a, len)` keeps the entrant's body (laid along the ring upstream of the entry) clear of ring vehicles;
   the ring stop line sits 6 m upstream of the entry so cars queued at it do not block a green entry.
 - Ring cap in `canEnter`: no entry above 60% (signals) / 85% (give-way) ring occupancy. Without it the signalised ring
   fills completely and deadlocks permanently.
+- Keep clear in `canEnter`: no entry towards a link whose queue (tail slower than 2 m/s) leaves no room for the entrant
+  plus the ring vehicles already heading there. Without it Ramada and Milea gridlock for good across the 195 m link.
 
 ## Known simplifications (candidates for next work)
 - One ring lane and one lane per approach; the real roundabouts have more. This understates signalised capacity.
 - Per-arm flows (`flow`, veh/h) and signal timings are invented, scaled to the one published count. No real counts, no published phase plan.
-- Schematic geometry; the Șaguna link is shortened. Vehicles queued past the map edge sit in `arm.backlog`.
+- Ring radius is `RR = 26` m for all three; OSM ring centrelines are 11–15 m radius with 2 lanes. The roundabouts are drawn
+  on a straight corridor, not at their real positions. Vehicles queued past the map edge sit in `arm.backlog`.
 - No lane changing or lane-choice errors (the city blamed >80% of the 6 Oct queues on them), no coordination
-  offsets between roundabouts, no intermediate signals on Șaguna (e.g. Banatului).
+  offsets between roundabouts, no intermediate signals on the links (e.g. at Banatului on the eastbound route).
 - Bus tails are drawn along the ring while entering (visual only).
 
 ## Conventions
