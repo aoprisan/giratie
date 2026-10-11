@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {createSim, grade, mulberry32, score, type Ctrl, type Mode, type Vehicle} from '../src/sim';
+import {createSim, grade, mulberry32, pct, score, type Ctrl, type Mode, type Vehicle} from '../src/sim';
 
 function run(modes: Mode[], seed = 1, steps = 6000, ctrl: Ctrl = 'adaptive') {
   const s = createSim({demand: 1, cycle: 70, ped: 120, plan: 'pair', ctrl}, mulberry32(seed));
@@ -230,5 +230,28 @@ describe('createSim', () => {
     expect(gw.wait).toBeLessThan(sig.wait);
     expect(gw.score!).toBeGreaterThan(sig.score!);
     expect(gw.score!).toBeGreaterThan(70);
+  });
+
+  it('reports the wait tail, stops, buses, share served and waits by approach', () => {
+    expect(pct([], 0.95)).toBe(0);
+    expect(pct([5, 1, 3, 2, 4], 0.5)).toBe(3);
+    expect(pct(Array.from({length: 100}, (_, i) => i + 1), 0.95)).toBe(95);
+    const gw = run(['classic', 'classic'], 1, 9000).stats(), sig = run(['signal', 'signal'], 1, 9000, 'fixed').stats();
+    for (const st of [gw, sig]) {
+      expect(st.waitP95).toBeGreaterThanOrEqual(st.wait);
+      expect(st.tripP95).toBeGreaterThanOrEqual(st.trip);
+      expect(st.served).toBeGreaterThan(0); expect(st.served).toBeLessThanOrEqual(1);
+      expect(st.buses).toBeGreaterThan(0);
+      // Six external arms with traffic, every one with finished trips; their trip-weighted waits add up to the mean.
+      expect(st.byArm.map(a => a.name)).toHaveLength(6);
+      const n = st.byArm.reduce((m, a) => m + a.n, 0);
+      expect(st.byArm.every(a => a.n > 0)).toBe(true);
+      expect(st.byArm.reduce((m, a) => m + a.wait * a.n, 0) / n).toBeCloseTo(st.wait, 6);
+    }
+    // Signals stop traffic more often and leave a longer tail; give-way serves all of the demand.
+    expect(sig.stops).toBeGreaterThan(gw.stops + 1);
+    expect(sig.waitP95).toBeGreaterThan(gw.waitP95 * 5);
+    expect(gw.served).toBeGreaterThan(0.9);
+    expect(sig.served).toBeLessThan(gw.served);
   });
 });

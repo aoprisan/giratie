@@ -72,6 +72,12 @@ export interface Vehicle {
   t0: number;
   /** Time spent waiting so far: queued beyond the map plus every step below `WV` on it. */
   wt: number;
+  /** Stops so far (each drop below `WV` after moving faster than `GV`; a wait beyond the map counts as one), and
+   *  whether it is halted now. */
+  ns: number;
+  halt: boolean;
+  /** Arm it came in from. */
+  org: Arm;
   dest: Arm;
   lane: Lane | null;
   rb: Roundabout | null;
@@ -214,11 +220,36 @@ export interface RbStats {
   green: string;
 }
 
+/** Trips from one external arm that finished in the last 5 min. */
+export interface ArmStats {
+  name: string;
+  /** Index of its roundabout in `rbs`. */
+  rb: number;
+  /** Trips, mean wait and trip time (s), stops per trip; vehicles stopped on its approach or queued beyond the map now. */
+  n: number;
+  wait: number;
+  trip: number;
+  stops: number;
+  queued: number;
+}
+
 export interface Stats {
   t: number;
   trip: number;
   /** Mean time trips finished in the last 5 min spent waiting (beyond the map or below 1 m/s on it), s. */
   wait: number;
+  /** 95th percentile of wait and trip time over the same trips (one in twenty waits longer), s. */
+  waitP95: number;
+  tripP95: number;
+  /** Mean stops per trip (see `Vehicle.ns`). */
+  stops: number;
+  /** Mean wait of buses only (0 if none finished), s, and how many finished. */
+  busWait: number;
+  buses: number;
+  /** Share of the offered demand that got through, 0–1 (capped at 1). */
+  served: number;
+  /** Per external arm, in `arms` order. */
+  byArm: ArmStats[];
   /** Arrivals per hour over the same window (demand actually offered). */
   offered: number;
   /** Traffic score 0–100 (`score()`), and its grade A–F from the mean wait; `null` before 2 simulated minutes. */
@@ -341,6 +372,13 @@ export function grade(wait: number): string {
   return wait <= 10 ? 'A' : wait <= 15 ? 'B' : wait <= 25 ? 'C' : wait <= 35 ? 'D' : wait <= 50 ? 'E' : 'F';
 }
 
+/** The `q` quantile (0–1) of `xs` by nearest rank, 0 for none. */
+export function pct(xs: number[], q: number): number {
+  if (!xs.length) return 0;
+  const a = [...xs].sort((x, y) => x - y);
+  return a[Math.min(a.length - 1, Math.max(0, Math.ceil(q * a.length) - 1))];
+}
+
 /** Traffic score 0–100: the share of the offered demand that got through (capped at 1) times a wait factor
  *  30 / (30 + mean wait), so no waiting and nothing left behind scores 100, a 30 s wait halves the score. */
 export function score(wait: number, flow: number, offered: number): number {
@@ -398,7 +436,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
   const RR = 16, LW = 3.4, C = Math.PI * 2 * RR, ZD = 8, DT = 0.1;
   const mod = (a: number, n: number) => ((a % n) + n) % n;
   let t = 0, n = 0;
-  const lanes: Lane[] = [], crossings: Crossing[] = [], done: {t: number; tt: number; wt: number}[] = [], arrived: number[] = [];
+  const lanes: Lane[] = [], crossings: Crossing[] = [], done: {t: number; tt: number; wt: number; ns: number; a: Arm; bus: boolean}[] = [], arrived: number[] = [];
   const W = (q: Pt[]): Pt[] => q.map(([x, y]) => [x * M, y * M]);
   const rbs: Roundabout[] = defs.map((d, i) => ({key: d.key, name: d.name, x: d.c[0] * M, y: d.c[1] * M, idx: i, mode: 'classic', veh: [], arms: [],
     ctl: {on: false, cur: 0, next: 0, start: 0, clr: -1, seen: 0}}));
@@ -631,8 +669,12 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
     return true;
   }
   const ERRD = 30, ERRW = 10, XT = 3, STAG = 2.5;
-  /** Below this speed (m/s) a vehicle counts as waiting. */
-  const WV = 1;
+  /** Below this speed (m/s) a vehicle counts as waiting; a new stop needs it to have moved faster than `GV` since. */
+  const WV = 1, GV = 3;
+  function tick(v: Vehicle): void {
+    if (v.v < WV) { v.wt += DT; if (!v.halt) { v.halt = true; v.ns++; } }
+    else if (v.v > GV) v.halt = false;
+  }
   /** Lane markings painted? Read from `P` each step, so it can be switched while running. */
   let marked = true;
   // Intelligent Driver Model.
@@ -665,8 +707,8 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
 
   function step(): void {
     t += DT; n++; marked = P.marked !== false;
-    for (const l of lanes) for (const v of l.veh) if (v.v < WV) v.wt += DT;
-    for (const rb of rbs) for (const v of rb.veh) if (v.v < WV) v.wt += DT;
+    for (const l of lanes) for (const v of l.veh) tick(v);
+    for (const rb of rbs) for (const v of rb.veh) tick(v);
     for (const rb of rbs) control(rb);
     for (const a of arms) a.sg = sig(a);
     for (const x of crossings) {
@@ -691,7 +733,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
           const l = a.inL[bare ? b.side : w >= 0 ? (wrong ? 1 - w : w) : a.inL[1].veh.length < a.inL[0].veh.length ? 1 : 0], tl = l.veh[l.veh.length - 1];
           if (!tl || tl.pos - tl.len > 7) {
             a.backlog.shift();
-            l.veh.push({pos: 0, v: tl ? Math.min(11, tl.v + 2) : 11, len: b.len, bus: b.bus, kind: b.kind, vf: b.vf, th: b.th, am: b.am, gf: b.gf, t0: b.t, wt: t - b.t, dest: b.dest, lane: l, rb: null, s: 0, exit: null, step: n,
+            l.veh.push({pos: 0, v: tl ? Math.min(11, tl.v + 2) : 11, len: b.len, bus: b.bus, kind: b.kind, vf: b.vf, th: b.th, am: b.am, gf: b.gf, t0: b.t, wt: t - b.t, ns: t - b.t > 1 ? 1 : 0, halt: false, org: a, dest: b.dest, lane: l, rb: null, s: 0, exit: null, step: n,
               ri: 0, err: bare ? 2 : wrong ? (b.agg ? 2 : 1) : 0, wait: -1, rw: -1, hs: 0, agg: b.agg, both: -1});
           }
         }
@@ -838,7 +880,7 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
               const m = l.merge, k = m.lane.veh.findIndex(o => o.pos < m.pos);
               v.lane = m.lane; v.pos = m.pos; m.lane.veh.splice(k < 0 ? m.lane.veh.length : k, 0, v);
             } else v.pos = l.L - 0.05;
-          } else { l.veh.splice(l.veh.indexOf(v), 1); v.lane = null; done.push({t, tt: t - v.t0, wt: v.wt}); }
+          } else { l.veh.splice(l.veh.indexOf(v), 1); v.lane = null; done.push({t, tt: t - v.t0, wt: v.wt, ns: v.ns, a: v.org, bus: v.bus}); }
         }
       }
     }
@@ -847,9 +889,17 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
   function stats(): Stats {
     while (done.length && done[0].t < t - 300) done.shift();
     while (arrived.length && arrived[0] < t - 300) arrived.shift();
-    let sum = 0, ws = 0; for (const d of done) { sum += d.tt; ws += d.wt; }
+    let sum = 0, ws = 0, ns = 0, bw = 0, buses = 0;
+    for (const d of done) { sum += d.tt; ws += d.wt; ns += d.ns; if (d.bus) { bw += d.wt; buses++; } }
     const win = Math.min(300, Math.max(t, 1)), flow = done.length / win * 3600, offered = arrived.length / win * 3600;
-    const wait = done.length ? ws / done.length : 0;
+    const N = done.length, wait = N ? ws / N : 0;
+    const byArm: ArmStats[] = arms.filter(a => a.link < 0 && a.flow).map(a => {
+      let n = 0, w = 0, tt = 0, st = 0;
+      for (const d of done) if (d.a === a) { n++; w += d.wt; tt += d.tt; st += d.ns; }
+      let q = a.backlog.length;
+      for (const l of [...a.inL, ...(a.inLane.slip ? [a.inLane.slip.lane] : [])]) for (const v of l.veh) if (v.v < WV) q++;
+      return {name: a.name || '', rb: a.rb.idx, n, wait: n ? w / n : 0, trip: n ? tt / n : 0, stops: n ? st / n : 0, queued: q};
+    });
     let stopped = 0, backlog = 0, total = 0;
     const per: RbStats[] = [];
     for (const rb of rbs) {
@@ -866,7 +916,8 @@ export function createSim(P: Params, rng: () => number = Math.random): Sim {
       per.push({queued: q, worst: wname, worstN: wn, ring: rb.veh.length, ringStopped: rs, green});
     }
     const ok = t >= 120 && done.length > 0;
-    return {t, trip: done.length ? sum / done.length : 0, wait, flow, offered, score: ok ? score(wait, flow, offered) : null, grade: ok ? grade(wait) : '–',
+    return {t, trip: N ? sum / N : 0, wait, waitP95: pct(done.map(d => d.wt), 0.95), tripP95: pct(done.map(d => d.tt), 0.95),
+      stops: N ? ns / N : 0, busWait: buses ? bw / buses : 0, buses, served: offered > 0 ? Math.min(1, flow / offered) : 1, byArm, flow, offered, score: ok ? score(wait, flow, offered) : null, grade: ok ? grade(wait) : '–',
       stopped, backlog, total, per};
   }
 
