@@ -1,5 +1,5 @@
 // Canvas rendering, controls and readouts. Colours come from CSS tokens on :root.
-import {along, createSim, offset, type Ctrl, type Lane, type Light, type Mode, type Params, type Plan, type Pt, type Sim, type Vehicle} from './sim';
+import {along, createSim, grade, offset, type Ctrl, type Lane, type Light, type Mode, type Params, type Plan, type Pt, type Sim, type Vehicle} from './sim';
 
 const COLOR_KEYS = ['ground', 'road', 'mark', 'island', 'car', 'stop', 'slow', 'go', 'ped', 'bus', 'wrong', 'ink', 'muted', 'line', 'accent', 'surface', 'lampoff', 'label', 'labelink', 'title'] as const;
 type ColorKey = typeof COLOR_KEYS[number];
@@ -234,16 +234,39 @@ export function start(): void {
   P.marked = markEl.value === 'yes';
 
   const p2 = (n: number) => String(n).padStart(2, '0');
+  const dur = (x: number) => x < 60 ? Math.round(x) + ' s' : Math.floor(x / 60) + ':' + p2(Math.round(x % 60));
+  const gc = (g: string) => 'AB'.includes(g) ? 'g-good' : 'CD'.includes(g) ? 'g-mid' : 'g-bad';
+  const armBody = $('arms'); let armRows: HTMLTableRowElement[] = [];
   function readouts(): void {
     const s = sim.stats(), T = Math.floor(BASE + s.t);
     $('clock').textContent = p2(Math.floor(T / 3600) % 24) + ':' + p2(Math.floor(T / 60) % 60) + ':' + p2(T % 60);
     const sc = $('t-score');
     sc.textContent = s.score === null ? '–' : s.score + ' · ' + s.grade;
-    sc.className = s.score === null ? '' : 'AB'.includes(s.grade) ? 'g-good' : 'CD'.includes(s.grade) ? 'g-mid' : 'g-bad';
-    $('t-wait').textContent = s.score === null ? '–' : s.wait < 60 ? Math.round(s.wait) + ' s' : Math.floor(s.wait / 60) + ':' + p2(Math.round(s.wait % 60));
+    sc.className = s.score === null ? '' : gc(s.grade);
+    $('t-wait').textContent = s.score === null ? '–' : dur(s.wait);
     $('t-trip').textContent = s.trip ? Math.floor(s.trip / 60) + ':' + p2(Math.round(s.trip % 60)) : '–';
     $('t-flow').textContent = String(Math.round(s.flow / 10) * 10);
     $('t-stop').textContent = String(s.stopped); $('t-back').textContent = String(s.backlog);
+    const ok = s.score !== null;
+    $('f-wp95').textContent = ok ? dur(s.waitP95) : '–';
+    $('f-tp95').textContent = ok ? dur(s.tripP95) : '–';
+    $('f-stops').textContent = ok ? s.stops.toFixed(1) : '–';
+    $('f-served').textContent = ok ? Math.round(s.served * 100) + '%' : '–';
+    $('f-bus').textContent = ok && s.buses ? dur(s.busWait) + ', ' + s.buses + (s.buses > 1 ? ' buses' : ' bus') : '–';
+    const top = Math.max(30, ...s.byArm.map(a => a.wait));
+    if (armRows.length !== s.byArm.length) {
+      armBody.textContent = ''; armRows = s.byArm.map(a => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${a.name}<small>${sim.rbs[a.rb].name}</small></td><td class="w"><span class="bar"><span><i></i></span><b></b></span></td><td></td><td></td>`;
+        armBody.appendChild(tr); return tr;
+      });
+    }
+    s.byArm.forEach((a, i) => {
+      const c = armRows[i].children, bar = c[1].querySelector('i')!, has = ok && a.n > 0;
+      bar.style.width = has ? (a.wait / top * 100).toFixed(1) + '%' : '0'; bar.className = has ? gc(grade(a.wait)) : '';
+      c[1].querySelector('b')!.textContent = has ? dur(a.wait) : '–';
+      c[2].textContent = has ? a.stops.toFixed(1) : '–'; c[3].textContent = String(a.queued);
+    });
     s.per.forEach((p, i) => {
       $('q' + i).textContent = String(p.queued);
       $('w' + i).textContent = p.worstN ? p.worst + ' · ' + p.worstN : '–';

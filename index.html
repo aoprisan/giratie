@@ -83,6 +83,18 @@
       <div class="tile"><b id="t-stop">–</b><span>stopped on the map now</span></div>
       <div class="tile"><b id="t-back">–</b><span>queued beyond the map</span></div>
     </div>
+    <dl class="facts">
+      <dt>1 in 20 trips waits longer than</dt><dd id="f-wp95">–</dd>
+      <dt>1 in 20 trips takes longer than</dt><dd id="f-tp95">–</dd>
+      <dt>Stops per trip</dt><dd id="f-stops">–</dd>
+      <dt>Arriving traffic that gets through</dt><dd id="f-served">–</dd>
+      <dt>Average wait, buses only</dt><dd id="f-bus">–</dd>
+    </dl>
+    <table class="arms" aria-label="Average wait by approach, last 5 minutes">
+      <thead><tr><th scope="col">Coming from</th><th scope="col">Average wait</th><th scope="col">Stops</th><th scope="col">Queued</th></tr></thead>
+      <tbody id="arms"></tbody>
+    </table>
+    <p class="cap">By approach: trips that started on each street and finished in the last 5 minutes. The bar is the average wait, coloured by its grade; queued counts vehicles stopped on that approach or waiting beyond the map.</p>
     <canvas id="spark" aria-label="Vehicles stopped or queued over the last 20 simulated minutes"></canvas>
     <p class="cap">Vehicles stopped or queued, last 20 simulated minutes. Dashed lines mark a change of scenario or control.</p>
     <p class="cap">Wait counts the time a vehicle spends queued beyond the map or below walking pace on it. The score is the share of arriving traffic that gets through, times 30 / (30 + average wait in seconds): 100 means nobody waits and nothing piles up, a 30 s wait halves it. The grade uses the level-of-service bands for roundabout delay: A up to 10 s, B 15, C 25, D 35, E 50, F beyond.</p>

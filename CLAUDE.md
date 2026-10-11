@@ -51,9 +51,9 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
 - `src/main.ts` – entry point; `src/style.css` – CSS (light/dark tokens on `:root`); `index.html` – markup.
 - `npm run build` – typechecks, then emits `dist/index.html`.
 - `test/sim.test.ts` / `npm test` – vitest: network shape, every signal in the Vissim image, bypasses and mid-block crossings in use, both ring and approach lanes in use without overlaps, lane-choice errors (polite and forcing), no lane markings without gridlock,
-  determinism, throughput sanity, no ring overlap, vehicle mix, 300% demand without gridlock, score and wait.
+  determinism, throughput sanity, no ring overlap, vehicle mix, 300% demand without gridlock, score and wait, wait tail / stops / per-approach stats.
 - `scripts/scenarios.ts` / `npm run scenarios [-- seed [err [demand [mix]]]]` – 20 simulated minutes per scenario, prints trip time,
-  wait, throughput, offered demand, score and grade, queues (`mix` 0 = identical cars).
+  wait (mean and 95th percentile), stops, bus wait, throughput, offered demand, share served, score and grade, queues, wait by approach (`mix` 0 = identical cars).
 - `.github/workflows/pages.yml` – test + build on every push/PR, deploy `dist/` to GitHub Pages from `main`.
 
 ## Model
@@ -95,6 +95,13 @@ TypeScript, built with Vite into one self-contained HTML file (`vite-plugin-sing
   × 30 / (30 + wait); `grade(wait)` on the HCM roundabout LOS delay bands (A ≤ 10 s, B 15, C 25, D 35, E 50, F). Both null / '–'
   before 120 s. Seed 1, 20 min, pair 70 s, 100%: give-way 94 A (wait 2 s); Milea only adaptive 73, fixed 36 E;
   both adaptive 31 F (56 s), fixed 11 F (201 s). At 200%: give-way 26, both adaptive 4, both fixed 2.
+- More stats over the same 5-min window: `waitP95` / `tripP95` (nearest-rank 95th percentile, `pct()`), `stops` per trip
+  (`Vehicle.ns`: a drop below `WV` after moving above `GV` = 3 m/s; a wait beyond the map counts as one), `busWait` / `buses`,
+  `served` (flow / offered, capped at 1; noisy because arrivals and finishes in one window are a trip time apart), and
+  `byArm` (per external arm by origin, `Vehicle.org`: trips, wait, trip, stops, queued now). No extra `rng` draws.
+  Seed 1, 20 min, pair 70 s, 100% (wait p95 s / stops): give-way 8 / 0.6; Milea only adaptive 39 / 1.1, fixed 132 / 1.5;
+  both adaptive 156 / 2.5, fixed 410 / 3.0. Worst approaches under signals: V. Milea, Noica, Dumbrăvii (Milea ring).
+  The UI shows them under the tiles and as a per-approach table with wait bars coloured by grade.
 - Units: metres, seconds, m/s. `DT = 0.1 s`. Ring centreline radius `RR = 16` m, lanes `LW = 3.4` m. Ring position `s` increases
   in the direction of travel (screen angle = `-s/RR`, right-hand traffic).
 - Bypasses (`slip` on an `ArmDef`, `Lane.slip` / `Lane.merge`): Coposu → Șaguna at Ramada, Dumbrăvii → V. Milea at Milea. A vehicle
